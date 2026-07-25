@@ -163,9 +163,16 @@ class StoryPhone_IM_REST_Controller {
 			self::NAMESPACE,
 			'/categories',
 			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( __CLASS__, 'list_categories' ),
-				'permission_callback' => array( __CLASS__, 'check_permissions' ),
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( __CLASS__, 'list_categories' ),
+					'permission_callback' => array( __CLASS__, 'check_permissions' ),
+				),
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, 'create_category' ),
+					'permission_callback' => array( __CLASS__, 'check_permissions' ),
+				),
 			)
 		);
 
@@ -998,6 +1005,83 @@ class StoryPhone_IM_REST_Controller {
 				'product_id' => $product_id,
 				'status'     => 'trash',
 				'message'    => __( 'Product moved to trash.', 'storyphone-inventory-manager' ),
+			)
+		);
+	}
+
+	/**
+	 * POST /categories — create a product category (or subcategory).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function create_category( $request ) {
+		$rate = StoryPhone_IM_Audit_Log::check_rate_limit();
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) ) {
+			$params = $request->get_params();
+		}
+
+		$name = isset( $params['name'] ) ? sanitize_text_field( $params['name'] ) : '';
+		if ( '' === $name ) {
+			return new WP_Error(
+				'storyphone_im_category_name',
+				__( 'Category name is required.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$parent = isset( $params['parent'] ) ? absint( $params['parent'] ) : 0;
+		if ( $parent > 0 ) {
+			$parent_term = get_term( $parent, 'product_cat' );
+			if ( ! $parent_term || is_wp_error( $parent_term ) ) {
+				return new WP_Error(
+					'storyphone_im_category_parent',
+					__( 'Parent category not found.', 'storyphone-inventory-manager' ),
+					array( 'status' => 400 )
+				);
+			}
+		}
+
+		$result = wp_insert_term(
+			$name,
+			'product_cat',
+			array(
+				'parent' => $parent,
+			)
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$term_id = (int) $result['term_id'];
+		$term    = get_term( $term_id, 'product_cat' );
+
+		StoryPhone_IM_Audit_Log::log(
+			'create',
+			0,
+			array(
+				'category_id' => (string) $term_id,
+				'name'        => $name,
+				'parent'      => (string) $parent,
+			)
+		);
+
+		return rest_ensure_response(
+			array(
+				'success'  => true,
+				'category' => array(
+					'id'     => (int) $term->term_id,
+					'name'   => $term->name,
+					'slug'   => $term->slug,
+					'parent' => (int) $term->parent,
+					'count'  => (int) $term->count,
+				),
 			)
 		);
 	}

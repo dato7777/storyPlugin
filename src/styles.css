@@ -1492,10 +1492,17 @@ body.storyphone-im-panel-open {
 
 .sp-ctree-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
+}
+
+.sp-ctree-toolbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(100%, 320px);
 }
 
 .sp-ctree-hint {
@@ -1505,9 +1512,120 @@ body.storyphone-im-panel-open {
   font-weight: 600;
 }
 
+.sp-ctree-include .sp-check-label {
+  color: var(--sp-ink);
+  font-size: 0.88rem;
+}
+
 .sp-ctree-toolbar-actions {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sp-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: #e8eef2;
+  border: 1px solid var(--sp-line);
+}
+
+.sp-seg-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--sp-muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background 160ms var(--sp-ease), color 160ms var(--sp-ease),
+    box-shadow 160ms var(--sp-ease);
+}
+
+.sp-seg-btn:hover {
+  color: var(--sp-ink);
+}
+
+.sp-seg-btn.is-active {
+  background: #fff;
+  color: var(--sp-accent);
+  box-shadow: var(--sp-shadow-sm);
+}
+
+.sp-btn-create-cat {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
+  padding-inline: 16px;
+}
+
+.sp-btn-create-cat-plus {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.sp-ctree-bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  box-shadow: var(--sp-shadow);
+}
+
+.sp-ctree-bulk-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sp-ctree-bulk .sp-btn-ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+}
+
+.sp-ctree-select-hint {
+  margin: 0 0 12px;
+  color: var(--sp-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.sp-ctree-check,
+.sp-ctree-check-spacer {
+  width: 28px;
+  flex: 0 0 28px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.sp-ctree-add-sub {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.sp-ctree-card.is-empty-card {
+  border-style: dashed;
+  background: #fafbfc;
+}
+
+.sp-ctree-node.is-empty .sp-ctree-card-count {
+  background: #fff7ed;
+  color: #c2410c;
 }
 
 .sp-ctree-canvas {
@@ -1543,6 +1661,10 @@ body.storyphone-im-panel-open {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.sp-ctree-row .sp-ctree-card {
+  flex: 1;
 }
 
 .sp-ctree-chevron,

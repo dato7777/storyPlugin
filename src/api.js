@@ -178,6 +178,13 @@ export function fetchCategories() {
   return request('categories');
 }
 
+export function createCategory(payload) {
+  return request('categories', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function updateCategory(id, payload) {
   return request(`categories/${absInt(id)}`, {
     method: 'POST',

@@ -33,6 +33,32 @@ export function buildCategoryTree(categories) {
 }
 
 /**
+ * Full category tree annotated with item counts.
+ *
+ * @param {Array<{id:number,name:string,parent:number,count?:number}>} categories
+ * @returns {Array<{id:number,name:string,parent:number,count:number,children:Array,itemCount:number,totalItems:number}>}
+ */
+export function buildAnnotatedCategoryTree(categories) {
+  const full = buildCategoryTree(categories);
+
+  function annotate(nodes) {
+    return nodes.map((node) => {
+      const children = annotate(node.children || []);
+      const itemCount = Number(node.count) || 0;
+      const childTotal = children.reduce((sum, c) => sum + (c.totalItems || 0), 0);
+      return {
+        ...node,
+        children,
+        itemCount,
+        totalItems: itemCount + childTotal,
+      };
+    });
+  }
+
+  return annotate(full);
+}
+
+/**
  * Tree of categories that have products (count > 0), keeping ancestors
  * so the hierarchy remains readable even when only children have items.
  *
@@ -40,27 +66,33 @@ export function buildCategoryTree(categories) {
  * @returns {Array<{id:number,name:string,parent:number,count:number,children:Array,itemCount:number,totalItems:number}>}
  */
 export function buildPopulatedCategoryTree(categories) {
-  const full = buildCategoryTree(categories);
-
   function prune(nodes) {
     return nodes
       .map((node) => {
         const children = prune(node.children || []);
-        const itemCount = Number(node.count) || 0;
-        const childTotal = children.reduce((sum, c) => sum + (c.totalItems || 0), 0);
-        const totalItems = itemCount + childTotal;
+        const totalItems = node.totalItems || 0;
+        if (totalItems < 1 && children.length === 0 && (node.itemCount || 0) < 1) {
+          return null;
+        }
         if (totalItems < 1) return null;
         return {
           ...node,
           children,
-          itemCount,
-          totalItems,
         };
       })
       .filter(Boolean);
   }
 
-  return prune(full);
+  return prune(buildAnnotatedCategoryTree(categories));
+}
+
+/**
+ * @param {Array} categories
+ * @param {boolean} includeEmpty
+ */
+export function buildCategoryTreeForExplorer(categories, includeEmpty = false) {
+  if (includeEmpty) return buildAnnotatedCategoryTree(categories);
+  return buildPopulatedCategoryTree(categories);
 }
 
 /**

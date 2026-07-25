@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   bulkProducts,
+  createCategory,
   createProduct,
   deleteCategory,
   fetchCategories,
@@ -63,6 +64,11 @@ export default function App() {
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [confirmDeleteCategory, setConfirmDeleteCategory] = useState(false);
+  const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
+  const [createCategoryForm, setCreateCategoryForm] = useState({
+    name: '',
+    parent: 0,
+  });
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type, id: Date.now() });
@@ -379,6 +385,60 @@ export default function App() {
     }
   }
 
+  function openCreateCategory({ parentId = 0 } = {}) {
+    setCreateCategoryForm({ name: '', parent: parentId || 0 });
+    setCreateCategoryOpen(true);
+  }
+
+  async function handleCreateCategory(e) {
+    e.preventDefault();
+    const name = createCategoryForm.name.trim();
+    if (!name) {
+      showToast('Category name is required', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await createCategory({
+        name,
+        parent: createCategoryForm.parent || 0,
+      });
+      showToast(
+        createCategoryForm.parent ? 'Subcategory created' : 'Category created'
+      );
+      setCreateCategoryOpen(false);
+      setCreateCategoryForm({ name: '', parent: 0 });
+      await loadCategories();
+    } catch (err) {
+      showToast(err.message || 'Could not create category', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteEmptyCategories(ids) {
+    setSaving(true);
+    let deleted = 0;
+    try {
+      for (const id of ids) {
+        await deleteCategory(id);
+        deleted += 1;
+      }
+      showToast(`Deleted ${deleted} categor${deleted === 1 ? 'y' : 'ies'}`);
+      await loadCategories();
+    } catch (err) {
+      showToast(
+        deleted
+          ? `Deleted ${deleted}, then failed: ${err.message}`
+          : err.message || 'Could not delete categories',
+        'error'
+      );
+      await loadCategories();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!canManage) {
     return (
       <div className="sp-shell">
@@ -486,6 +546,9 @@ export default function App() {
               <CategoryTreeView
                 categories={categories}
                 onOpenCategory={selectCategory}
+                onCreateCategory={openCreateCategory}
+                onDeleteCategories={handleDeleteEmptyCategories}
+                saving={saving}
               />
             ) : loading ? (
               <div className="sp-empty">Loading products…</div>
@@ -635,6 +698,76 @@ export default function App() {
                   </button>
                   <button type="submit" className="sp-btn sp-btn-primary" disabled={saving}>
                     {saving ? 'Creating…' : 'Save'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {createCategoryOpen &&
+        createPortal(
+          <div
+            className="sp-modal-backdrop"
+            onClick={() => !saving && setCreateCategoryOpen(false)}
+          >
+            <div
+              className="sp-modal sp-modal-sm"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sp-create-cat-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="sp-create-cat-title">
+                {createCategoryForm.parent ? 'Create subcategory' : 'Create new category'}
+              </h2>
+              <form className="sp-form" onSubmit={handleCreateCategory}>
+                <label>
+                  Name
+                  <input
+                    required
+                    value={createCategoryForm.name}
+                    onChange={(e) =>
+                      setCreateCategoryForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                    placeholder="e.g. Headphones"
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  Parent category
+                  <select
+                    value={createCategoryForm.parent || ''}
+                    onChange={(e) =>
+                      setCreateCategoryForm((f) => ({
+                        ...f,
+                        parent: e.target.value ? Number(e.target.value) : 0,
+                      }))
+                    }
+                  >
+                    <option value="">None (top-level category)</option>
+                    {categoryOptions.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="sp-help">
+                  Choose a parent to create a subcategory under an existing category.
+                </p>
+                <div className="sp-modal-actions">
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-ghost"
+                    disabled={saving}
+                    onClick={() => setCreateCategoryOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="sp-btn sp-btn-primary" disabled={saving}>
+                    {saving ? 'Creating…' : 'Create'}
                   </button>
                 </div>
               </form>
