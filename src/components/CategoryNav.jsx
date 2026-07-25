@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  buildCategoryTree,
-  countCategoriesWithItems,
-  getRootAncestorId,
-} from '../categories.js';
+import { buildCategoryTree, countCategoriesWithItems } from '../categories.js';
 
 function CategoryBranch({
   nodes,
@@ -55,7 +51,10 @@ function CategoryBranch({
           <button
             type="button"
             className={`sp-nav-item ${hasChildren ? 'has-kids' : ''}`}
-            onClick={() => onSelect(node.id, { hasChildren, isOpen })}
+            onClick={() => {
+              if (hasChildren) onToggle(node.id);
+              onSelect(node.id);
+            }}
           >
             {hasChildren ? (
               <span className="sp-nav-folder" aria-hidden="true" title="Has subcategories">
@@ -121,9 +120,9 @@ export default function CategoryNav({
 
   useEffect(() => {
     if (!selectedCategoryId) return;
-    const rootId = getRootAncestorId(categories, selectedCategoryId);
-    if (!rootId) return;
 
+    // Keep ancestor path open so the selected category stays visible,
+    // but do not force-expand the selected node itself (click toggles that).
     setExpanded((prev) => {
       const next = new Set(prev);
       const byId = new Map(categories.map((c) => [c.id, c]));
@@ -132,9 +131,6 @@ export default function CategoryNav({
         next.add(Number(current.parent));
         current = byId.get(Number(current.parent));
       }
-      // Also expand the selected node if it has children.
-      next.add(selectedCategoryId);
-      if (rootId) next.add(rootId);
       return next;
     });
   }, [selectedCategoryId, categories]);
@@ -146,13 +142,6 @@ export default function CategoryNav({
       else next.add(id);
       return next;
     });
-  }
-
-  function handleSelectCategory(id, meta = {}) {
-    onSelectCategory(id);
-    if (meta.hasChildren && !meta.isOpen) {
-      setExpanded((prev) => new Set(prev).add(id));
-    }
   }
 
   function countFor(id) {
@@ -212,7 +201,7 @@ export default function CategoryNav({
               selectedId={selectedCategoryId}
               expanded={expanded}
               onToggle={toggle}
-              onSelect={handleSelectCategory}
+              onSelect={onSelectCategory}
             />
           )}
         </section>
