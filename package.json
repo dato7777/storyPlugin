@@ -1,0 +1,20 @@
+{
+  "name": "storyphone-inventory-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "React admin UI for StoryPhone Inventory Manager WordPress plugin",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && printf '%s\\n' '<?php' '// Silence is golden.' > build/index.php",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}
