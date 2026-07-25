@@ -13,6 +13,7 @@ import {
   updateCategory,
   updateProduct,
   uploadProductImage,
+  deleteProductImage,
 } from './api.js';
 import { countCategoriesWithItems, flattenCategoriesForSelect } from './categories.js';
 import BulkBar from './components/BulkBar.jsx';
@@ -257,13 +258,31 @@ export default function App() {
     }
   }
 
-  async function handleSave(payload, imageFile) {
+  async function refreshSelectedProduct() {
+    if (!selectedId) return;
+    try {
+      const data = await fetchProduct(selectedId);
+      setSelectedProduct(data);
+    } catch {
+      /* non-blocking */
+    }
+  }
+
+  async function handleSave(payload, pendingFiles = []) {
     if (!selectedId) return;
     setSaving(true);
     try {
       await updateProduct(selectedId, payload);
-      if (imageFile) {
-        await uploadProductImage(selectedId, imageFile);
+      const files = Array.isArray(pendingFiles)
+        ? pendingFiles
+        : pendingFiles
+          ? [pendingFiles]
+          : [];
+      for (let i = 0; i < files.length; i += 1) {
+        // First upload becomes featured if product had none; later ones join gallery.
+        await uploadProductImage(selectedId, files[i], {
+          asFeatured: i === 0 && !payload.image_id,
+        });
       }
       showToast('Product saved');
       closePanel();
@@ -272,6 +291,54 @@ export default function App() {
     } catch (err) {
       showToast(err.message || 'Save failed', 'error');
       throw err;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleUploadImage(file, asFeatured = true) {
+    if (!selectedId) return;
+    setSaving(true);
+    try {
+      const result = await uploadProductImage(selectedId, file, { asFeatured });
+      if (result.product) setSelectedProduct(result.product);
+      else await refreshSelectedProduct();
+      showToast('Image uploaded');
+      await loadProducts();
+    } catch (err) {
+      showToast(err.message || 'Image upload failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteImage(imageId) {
+    if (!selectedId) return;
+    setSaving(true);
+    try {
+      const result = await deleteProductImage(selectedId, imageId);
+      if (result.product) setSelectedProduct(result.product);
+      else await refreshSelectedProduct();
+      showToast('Image removed');
+      await loadProducts();
+    } catch (err) {
+      showToast(err.message || 'Could not delete image', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSetFeaturedImage(imageId) {
+    if (!selectedId) return;
+    setSaving(true);
+    try {
+      const result = await updateProduct(selectedId, { image_id: imageId });
+      if (result.product) setSelectedProduct(result.product);
+      else await refreshSelectedProduct();
+      showToast('Default image updated');
+      await loadProducts();
+    } catch (err) {
+      showToast(err.message || 'Could not set default image', 'error');
     } finally {
       setSaving(false);
     }
@@ -612,6 +679,9 @@ export default function App() {
         onClose={closePanel}
         onSave={handleSave}
         onRequestDelete={(product) => setConfirmTrash(product)}
+        onUploadImage={handleUploadImage}
+        onDeleteImage={handleDeleteImage}
+        onSetFeaturedImage={handleSetFeaturedImage}
       />
 
       {createOpen &&

@@ -4,16 +4,27 @@ import { flattenCategoriesForSelect } from '../categories.js';
 import StockToggle from './StockToggle.jsx';
 import QuantityStepper from './QuantityStepper.jsx';
 
+function stripHtml(value) {
+  if (!value) return '';
+  return String(value)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 const blank = {
   name: '',
   price: '',
+  sku: '',
   description: '',
   stock_qty: 0,
   unlimited: true,
   stock_status: 'instock',
   enabled: true,
   category_ids: [],
-  image: '',
+  image_id: 0,
 };
 
 export default function ProductEditPanel({
@@ -25,18 +36,22 @@ export default function ProductEditPanel({
   onClose,
   onSave,
   onRequestDelete,
+  onUploadImage,
+  onDeleteImage,
+  onSetFeaturedImage,
 }) {
   const [form, setForm] = useState(blank);
-  const [imageFile, setImageFile] = useState(null);
-  const [preview, setPreview] = useState('');
+  const [pendingFiles, setPendingFiles] = useState([]);
   const [tab, setTab] = useState('basics');
   const categoryOptions = useMemo(() => flattenCategoriesForSelect(categories), [categories]);
+
+  const images = product?.images || [];
+  const featuredId = form.image_id || product?.image_id || 0;
 
   useEffect(() => {
     if (!product) {
       setForm(blank);
-      setImageFile(null);
-      setPreview('');
+      setPendingFiles([]);
       setTab('basics');
       return;
     }
@@ -45,19 +60,20 @@ export default function ProductEditPanel({
       product.catalog_visibility === 'hidden' ||
       (product.status && product.status !== 'publish');
     const unlimited = product.manage_stock !== true;
+    const rawDesc = product.edit_description || product.description || product.short_description || '';
     setForm({
       name: product.name || '',
       price: product.price || '',
-      description: product.description || '',
+      sku: product.sku || '',
+      description: stripHtml(rawDesc),
       stock_qty: unlimited ? 0 : product.stock_qty ?? 0,
       unlimited,
       stock_status: product.stock_status || 'instock',
       enabled: !isDisabled,
       category_ids: product.category_ids || [],
-      image: product.image || '',
+      image_id: product.image_id || 0,
     });
-    setImageFile(null);
-    setPreview(product.image || '');
+    setPendingFiles([]);
     setTab('basics');
   }, [product]);
 
@@ -82,14 +98,23 @@ export default function ProductEditPanel({
       {
         name: form.name,
         price: form.price,
+        sku: form.sku,
         description: form.description,
+        short_description: form.description,
         stock_quantity: form.unlimited ? null : Number(form.stock_qty) || 0,
         stock_status: form.stock_status,
         enabled: form.enabled,
         category_ids: form.category_ids,
+        image_id: form.image_id || 0,
       },
-      imageFile
+      pendingFiles
     );
+  }
+
+  function queueFiles(fileList) {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
+    setPendingFiles((prev) => [...prev, ...files]);
   }
 
   const panel = (
@@ -141,24 +166,112 @@ export default function ProductEditPanel({
             {tab === 'media' ? (
               <div className="sp-card-block">
                 <h3 className="sp-card-block-title">Images</h3>
-                <div className="sp-image-preview sp-image-preview-lg">
-                  {preview ? <img src={preview} alt="" /> : <span>No image</span>}
-                </div>
+                <p className="sp-help sp-image-pref">
+                  Preferred size: <strong>600×600 px</strong> (square). JPG, PNG, GIF, or WebP.
+                </p>
+
+                {images.length === 0 && pendingFiles.length === 0 ? (
+                  <div className="sp-image-preview sp-image-preview-lg">
+                    <span>No image</span>
+                  </div>
+                ) : (
+                  <div className="sp-image-grid">
+                    {images.map((img) => {
+                      const isDefault = Number(img.id) === Number(featuredId) || img.is_featured;
+                      return (
+                        <div
+                          key={img.id}
+                          className={`sp-image-tile ${isDefault ? 'is-featured' : ''}`}
+                        >
+                          <div className="sp-image-tile-preview">
+                            {img.url ? <img src={img.url} alt="" /> : <span>—</span>}
+                            {isDefault ? (
+                              <span className="sp-image-tile-badge">Default</span>
+                            ) : null}
+                          </div>
+                          <div className="sp-image-tile-actions">
+                            {!isDefault ? (
+                              <button
+                                type="button"
+                                className="sp-btn sp-btn-soft sp-btn-sm"
+                                disabled={saving}
+                                onClick={() => onSetFeaturedImage(img.id)}
+                              >
+                                Set as default
+                              </button>
+                            ) : (
+                              <span className="sp-image-tile-default-label">Shown on website</span>
+                            )}
+                            <button
+                              type="button"
+                              className="sp-btn sp-btn-danger-soft sp-btn-sm"
+                              disabled={saving}
+                              onClick={() => {
+                                if (window.confirm('Remove this image from the product?')) {
+                                  onDeleteImage(img.id);
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {pendingFiles.map((file, idx) => (
+                      <div key={`pending-${idx}`} className="sp-image-tile is-pending">
+                        <div className="sp-image-tile-preview">
+                          <img src={URL.createObjectURL(file)} alt="" />
+                          <span className="sp-image-tile-badge">Pending</span>
+                        </div>
+                        <div className="sp-image-tile-actions">
+                          <button
+                            type="button"
+                            className="sp-btn sp-btn-ghost sp-btn-sm"
+                            onClick={() =>
+                              setPendingFiles((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <label className="sp-btn sp-btn-ghost sp-file-label">
                   Upload image
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/gif,image/webp"
                     hidden
+                    multiple
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      setImageFile(file);
-                      setPreview(URL.createObjectURL(file));
+                      queueFiles(e.target.files);
+                      e.target.value = '';
                     }}
                   />
                 </label>
-                <p className="sp-help">Accepts JPG, PNG, GIF, WebP. Prefer sharp, uncropped photos.</p>
+                <p className="sp-help">
+                  New uploads are saved when you press Save. Use “Set as default” to choose which
+                  image appears on the website.
+                </p>
+                {onUploadImage ? (
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-soft sp-btn-sm"
+                    disabled={saving || pendingFiles.length === 0}
+                    onClick={async () => {
+                      for (const file of pendingFiles) {
+                        await onUploadImage(file, images.length === 0);
+                      }
+                      setPendingFiles([]);
+                    }}
+                  >
+                    Upload now
+                  </button>
+                ) : null}
               </div>
             ) : (
               <>
@@ -174,6 +287,20 @@ export default function ProductEditPanel({
                     />
                     <span className="sp-char-count">{form.name.length}/300</span>
                   </label>
+
+                  <label>
+                    SKU
+                    <input
+                      value={form.sku}
+                      placeholder="No SKU"
+                      onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
+                    />
+                  </label>
+                  <p className="sp-help">
+                    {form.sku?.trim()
+                      ? 'Editable product code. NewOrder imports can set this automatically later.'
+                      : 'No SKU yet — you can enter one, or leave empty until import.'}
+                  </p>
 
                   <label>
                     Price ({currencySymbol})
@@ -285,8 +412,13 @@ export default function ProductEditPanel({
                       rows={5}
                       value={form.description}
                       onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                      placeholder="Product description shown on the website"
                     />
                   </label>
+                  <p className="sp-help">
+                    Saved to both the full description and short description so the storefront
+                    updates correctly.
+                  </p>
                 </div>
               </>
             )}
@@ -315,6 +447,5 @@ export default function ProductEditPanel({
     </div>
   );
 
-  // Render on document.body so the drawer sits above the WP admin menu (RTL right side).
   return createPortal(panel, document.body);
 }

@@ -165,12 +165,20 @@ export function bulkProducts(ids, action) {
   });
 }
 
-export function uploadProductImage(id, file) {
+export function uploadProductImage(id, file, { asFeatured = true } = {}) {
   const form = new FormData();
   form.append('image', file);
+  form.append('as_featured', asFeatured ? '1' : '0');
   return request(`products/${absInt(id)}/image`, {
     method: 'POST',
     body: form,
+  });
+}
+
+export function deleteProductImage(id, imageId) {
+  const q = imageId ? `?image_id=${absInt(imageId)}` : '';
+  return request(`products/${absInt(id)}/image${q}`, {
+    method: 'DELETE',
   });
 }
 

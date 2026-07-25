@@ -1350,6 +1350,77 @@ body.storyphone-im-panel-open {
   object-fit: cover;
 }
 
+.sp-image-pref {
+  margin-bottom: 12px;
+}
+
+.sp-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.sp-image-tile {
+  border: 1px solid var(--sp-line);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-image-tile.is-featured {
+  border-color: rgba(15, 118, 110, 0.45);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
+}
+
+.sp-image-tile-preview {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: #eef2f6;
+  display: grid;
+  place-items: center;
+}
+
+.sp-image-tile-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sp-image-tile-badge {
+  position: absolute;
+  top: 8px;
+  inset-inline-start: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.sp-image-tile.is-featured .sp-image-tile-badge {
+  background: var(--sp-accent);
+}
+
+.sp-image-tile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.sp-image-tile-default-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--sp-accent);
+  text-align: center;
+  padding: 6px 4px;
+}
+
 .sp-file-label {
   display: inline-flex;
   justify-content: center;

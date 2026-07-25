@@ -147,13 +147,30 @@ class StoryPhone_IM_REST_Controller {
 			self::NAMESPACE,
 			'/products/(?P<id>\d+)/image',
 			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'upload_product_image' ),
-				'permission_callback' => array( __CLASS__, 'check_permissions' ),
-				'args'                => array(
-					'id' => array(
-						'required'          => true,
-						'sanitize_callback' => 'absint',
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, 'upload_product_image' ),
+					'permission_callback' => array( __CLASS__, 'check_permissions' ),
+					'args'                => array(
+						'id' => array(
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+					),
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( __CLASS__, 'delete_product_image' ),
+					'permission_callback' => array( __CLASS__, 'check_permissions' ),
+					'args'                => array(
+						'id' => array(
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+						'image_id' => array(
+							'required'          => false,
+							'sanitize_callback' => 'absint',
+						),
 					),
 				),
 			)
@@ -608,11 +625,19 @@ class StoryPhone_IM_REST_Controller {
 		}
 
 		if ( isset( $params['description'] ) ) {
-			$product->set_description( wp_kses_post( $params['description'] ) );
+			$desc = wp_kses_post( $params['description'] );
+			$product->set_description( $desc );
 			$changed['description'] = 'updated';
+
+			// Many themes show the short description on the product page.
+			// Keep them in sync unless short_description is sent explicitly.
+			if ( ! array_key_exists( 'short_description', $params ) ) {
+				$product->set_short_description( $desc );
+				$changed['short_description'] = 'synced';
+			}
 		}
 
-		if ( isset( $params['short_description'] ) ) {
+		if ( array_key_exists( 'short_description', $params ) ) {
 			$product->set_short_description( wp_kses_post( $params['short_description'] ) );
 			$changed['short_description'] = 'updated';
 		}
@@ -712,9 +737,25 @@ class StoryPhone_IM_REST_Controller {
 			$changed['category_ids'] = implode( ',', $cat_ids );
 		}
 
-		$product->save();
+		// Set which image is the storefront default (featured image).
+		if ( array_key_exists( 'image_id', $params ) ) {
+			$featured_id = absint( $params['image_id'] );
+			$result      = self::assign_product_featured_image( $product, $featured_id );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$product                   = $result;
+			$changed['image_id']       = (string) (int) $product->get_image_id();
+			$changed['featured_sync']  = '1';
+		} else {
+			$product->save();
+			self::bust_product_caches( $product->get_id() );
+		}
 
 		StoryPhone_IM_Audit_Log::log( 'update', $product->get_id(), $changed );
+
+		// Reload so response matches what the storefront will read.
+		$product = wc_get_product( $product->get_id() );
 
 		return rest_ensure_response(
 			array(
@@ -937,8 +978,44 @@ class StoryPhone_IM_REST_Controller {
 		$attach_data = wp_generate_attachment_metadata( $attach_id, $upload['file'] );
 		wp_update_attachment_metadata( $attach_id, $attach_data );
 
-		$product->set_image_id( $attach_id );
-		$product->save();
+		$as_featured = true;
+		if ( null !== $request->get_param( 'as_featured' ) ) {
+			$as_featured = filter_var( $request->get_param( 'as_featured' ), FILTER_VALIDATE_BOOLEAN );
+		}
+
+		$current_featured = (int) $product->get_image_id();
+		$gallery          = array_map( 'absint', $product->get_gallery_image_ids() );
+
+		if ( $as_featured || $current_featured < 1 ) {
+			if ( $current_featured > 0 && $current_featured !== (int) $attach_id ) {
+				$gallery[] = $current_featured;
+			}
+			$gallery = array_values(
+				array_filter(
+					array_unique( $gallery ),
+					static function ( $gid ) use ( $attach_id ) {
+						return (int) $gid > 0 && (int) $gid !== (int) $attach_id;
+					}
+				)
+			);
+			$product->set_image_id( (int) $attach_id );
+			$product->set_gallery_image_ids( $gallery );
+			$product->save();
+			$product = self::persist_product_image_meta( $product );
+		} else {
+			$gallery[] = (int) $attach_id;
+			$gallery   = array_values(
+				array_filter(
+					array_unique( $gallery ),
+					static function ( $gid ) use ( $current_featured ) {
+						return (int) $gid > 0 && (int) $gid !== $current_featured;
+					}
+				)
+			);
+			$product->set_gallery_image_ids( $gallery );
+			$product->save();
+			$product = self::persist_product_image_meta( $product );
+		}
 
 		StoryPhone_IM_Audit_Log::log(
 			'upload_image',
@@ -953,12 +1030,100 @@ class StoryPhone_IM_REST_Controller {
 			$image_url = wp_get_attachment_url( $attach_id );
 		}
 
+		$product = wc_get_product( $product->get_id() );
+
 		return rest_ensure_response(
 			array(
-				'success'    => true,
-				'image_id'   => (int) $attach_id,
-				'image_url'  => esc_url_raw( $image_url ? $image_url : '' ),
-				'product'    => self::format_product_detail( $product ),
+				'success'   => true,
+				'image_id'  => (int) $attach_id,
+				'image_url' => esc_url_raw( $image_url ? $image_url : '' ),
+				'product'   => self::format_product_detail( $product ),
+			)
+		);
+	}
+
+	/**
+	 * DELETE /products/{id}/image — remove a product image (featured or gallery).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function delete_product_image( $request ) {
+		$rate = StoryPhone_IM_Audit_Log::check_rate_limit();
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$product = self::get_wc_product( absint( $request['id'] ) );
+		if ( is_wp_error( $product ) ) {
+			return $product;
+		}
+
+		$image_id = absint( $request->get_param( 'image_id' ) );
+		if ( $image_id < 1 ) {
+			$image_id = (int) $product->get_image_id();
+		}
+		if ( $image_id < 1 ) {
+			return new WP_Error(
+				'storyphone_im_no_image',
+				__( 'No image to delete.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$featured = (int) $product->get_image_id();
+		$gallery  = array_map( 'absint', $product->get_gallery_image_ids() );
+		$all_ids  = array_unique( array_filter( array_merge( array( $featured ), $gallery ) ) );
+
+		if ( ! in_array( $image_id, $all_ids, true ) ) {
+			return new WP_Error(
+				'storyphone_im_image_not_on_product',
+				__( 'That image is not attached to this product.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$gallery = array_values(
+			array_filter(
+				$gallery,
+				static function ( $gid ) use ( $image_id ) {
+					return (int) $gid !== (int) $image_id;
+				}
+			)
+		);
+
+		if ( $featured === $image_id ) {
+			$new_featured = ! empty( $gallery ) ? (int) $gallery[0] : 0;
+			if ( $new_featured > 0 ) {
+				array_shift( $gallery );
+			}
+			$product->set_image_id( $new_featured );
+			$product->set_gallery_image_ids( $gallery );
+			$product->save();
+			$product = self::persist_product_image_meta( $product );
+		} else {
+			$product->set_gallery_image_ids( $gallery );
+			$product->save();
+			$product = self::persist_product_image_meta( $product );
+		}
+
+		// Remove from media library as well (soft-delete to trash).
+		wp_delete_attachment( $image_id, false );
+
+		StoryPhone_IM_Audit_Log::log(
+			'update',
+			$product->get_id(),
+			array(
+				'deleted_image_id' => (string) $image_id,
+			)
+		);
+
+		$product = wc_get_product( $product->get_id() );
+
+		return rest_ensure_response(
+			array(
+				'success' => true,
+				'product' => self::format_product_detail( $product ),
 			)
 		);
 	}
@@ -1274,6 +1439,159 @@ class StoryPhone_IM_REST_Controller {
 	}
 
 	/**
+	 * Assign featured image and keep gallery/meta in sync for shop + single product.
+	 *
+	 * @param WC_Product $product     Product.
+	 * @param int        $featured_id Attachment ID (0 to clear).
+	 * @return WC_Product|WP_Error
+	 */
+	private static function assign_product_featured_image( $product, $featured_id ) {
+		$featured_id = absint( $featured_id );
+		$current_id  = (int) $product->get_image_id();
+		$gallery     = array_values( array_filter( array_map( 'absint', $product->get_gallery_image_ids() ) ) );
+
+		if ( $featured_id > 0 ) {
+			$known = array_unique( array_filter( array_merge( array( $current_id ), $gallery ) ) );
+			if ( ! in_array( $featured_id, $known, true ) && ! wp_attachment_is_image( $featured_id ) ) {
+				return new WP_Error(
+					'storyphone_im_invalid_image',
+					__( 'Image not found for this product.', 'storyphone-inventory-manager' ),
+					array( 'status' => 400 )
+				);
+			}
+
+			if ( $current_id > 0 && $current_id !== $featured_id && ! in_array( $current_id, $gallery, true ) ) {
+				$gallery[] = $current_id;
+			}
+
+			$gallery = array_values(
+				array_filter(
+					array_unique( $gallery ),
+					static function ( $gid ) use ( $featured_id ) {
+						return (int) $gid !== (int) $featured_id;
+					}
+				)
+			);
+
+			$product->set_image_id( $featured_id );
+			$product->set_gallery_image_ids( $gallery );
+		} else {
+			if ( $current_id > 0 && ! in_array( $current_id, $gallery, true ) ) {
+				$gallery[] = $current_id;
+			}
+			$product->set_image_id( 0 );
+			$product->set_gallery_image_ids( array_values( array_unique( array_filter( $gallery ) ) ) );
+		}
+
+		$product->save();
+		return self::persist_product_image_meta( $product );
+	}
+
+	/**
+	 * Force WordPress/Woo meta + attachment order so single product pages
+	 * (not only catalog thumbnails) pick up the featured image.
+	 *
+	 * @param WC_Product $product Product after CRUD save.
+	 * @return WC_Product
+	 */
+	private static function persist_product_image_meta( $product ) {
+		$product_id  = $product->get_id();
+		$featured_id = (int) $product->get_image_id();
+		$gallery     = array_values(
+			array_filter(
+				array_map( 'absint', $product->get_gallery_image_ids() ),
+				static function ( $gid ) use ( $featured_id ) {
+					return $gid > 0 && $gid !== $featured_id;
+				}
+			)
+		);
+
+		// Canonical Woo/WP meta used by most themes & builders.
+		if ( $featured_id > 0 ) {
+			set_post_thumbnail( $product_id, $featured_id );
+			update_post_meta( $product_id, '_thumbnail_id', $featured_id );
+			wp_update_post(
+				array(
+					'ID'         => $featured_id,
+					'post_parent'=> $product_id,
+					'menu_order' => 0,
+				)
+			);
+		} else {
+			delete_post_thumbnail( $product_id );
+			delete_post_meta( $product_id, '_thumbnail_id' );
+		}
+
+		update_post_meta( $product_id, '_product_image_gallery', implode( ',', $gallery ) );
+
+		// Keep gallery attachment order predictable for themes that sort by menu_order.
+		$order = 1;
+		foreach ( $gallery as $gid ) {
+			wp_update_post(
+				array(
+					'ID'          => $gid,
+					'post_parent' => $product_id,
+					'menu_order'  => $order,
+				)
+			);
+			++$order;
+		}
+
+		// Re-apply via CRUD on a fresh object so in-memory state matches meta.
+		$fresh = wc_get_product( $product_id );
+		if ( $fresh ) {
+			$fresh->set_image_id( $featured_id > 0 ? $featured_id : '' );
+			$fresh->set_gallery_image_ids( $gallery );
+			$fresh->save();
+			$product = $fresh;
+		}
+
+		self::bust_product_caches( $product_id );
+
+		$reloaded = wc_get_product( $product_id );
+		return $reloaded ? $reloaded : $product;
+	}
+
+	/**
+	 * Clear product/page caches so catalog + single product refresh.
+	 *
+	 * @param int $product_id Product ID.
+	 */
+	private static function bust_product_caches( $product_id ) {
+		$product_id = absint( $product_id );
+		if ( $product_id < 1 ) {
+			return;
+		}
+
+		clean_post_cache( $product_id );
+		wc_delete_product_transients( $product_id );
+		wp_cache_delete( 'product-' . $product_id, 'products' );
+
+		if ( class_exists( 'WC_Cache_Helper' ) ) {
+			if ( method_exists( 'WC_Cache_Helper', 'invalidate_cache_group' ) ) {
+				WC_Cache_Helper::invalidate_cache_group( 'products' );
+			}
+		}
+
+		// Elementor / common page caches on Woo storefronts.
+		if ( class_exists( '\Elementor\Plugin' ) ) {
+			try {
+				\Elementor\Plugin::$instance->files_manager->clear_cache();
+			} catch ( \Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+				// Ignore cache clear failures.
+			}
+		}
+		if ( function_exists( 'rocket_clean_post' ) ) {
+			rocket_clean_post( $product_id );
+		}
+		if ( function_exists( 'lite_speed_purge_url' ) ) {
+			lite_speed_purge_url( get_permalink( $product_id ) );
+		}
+		do_action( 'litespeed_purge_post', $product_id );
+		do_action( 'storyphone_im_product_cache_cleared', $product_id );
+	}
+
+	/**
 	 * Load a WC product or return WP_Error.
 	 *
 	 * @param int $product_id Product ID.
@@ -1365,7 +1683,7 @@ class StoryPhone_IM_REST_Controller {
 	private static function format_product_detail( $product ) {
 		$summary = self::format_product_summary( $product );
 
-		$image_id  = $product->get_image_id();
+		$image_id  = (int) $product->get_image_id();
 		$image_url = '';
 		if ( $image_id ) {
 			$image_url = wp_get_attachment_image_url( $image_id, 'medium' );
@@ -1374,14 +1692,44 @@ class StoryPhone_IM_REST_Controller {
 			}
 		}
 
+		$images   = array();
+		$gallery  = array_map( 'absint', $product->get_gallery_image_ids() );
+		$all_ids  = array();
+		if ( $image_id > 0 ) {
+			$all_ids[] = $image_id;
+		}
+		foreach ( $gallery as $gid ) {
+			if ( $gid > 0 && ! in_array( $gid, $all_ids, true ) ) {
+				$all_ids[] = $gid;
+			}
+		}
+
+		foreach ( $all_ids as $aid ) {
+			$url = wp_get_attachment_image_url( $aid, 'medium' );
+			if ( ! $url ) {
+				$url = wp_get_attachment_url( $aid );
+			}
+			$images[] = array(
+				'id'          => (int) $aid,
+				'url'         => $url ? esc_url_raw( $url ) : '',
+				'is_featured' => (int) $aid === $image_id,
+			);
+		}
+
+		$description       = $product->get_description();
+		$short_description = $product->get_short_description();
+
 		return array_merge(
 			$summary,
 			array(
-				'description'       => $product->get_description(),
-				'short_description' => $product->get_short_description(),
+				'description'       => $description,
+				'short_description' => $short_description,
+				// Prefer full description; fall back so the editor is never blank if only short exists.
+				'edit_description'  => $description ? $description : $short_description,
 				'manage_stock'      => $product->get_manage_stock(),
-				'image_id'          => $image_id ? (int) $image_id : 0,
+				'image_id'          => $image_id,
 				'image'             => $image_url ? esc_url_raw( $image_url ) : $summary['image'],
+				'images'            => $images,
 				'category_ids'      => array_map( 'absint', $product->get_category_ids() ),
 				'status'            => $product->get_status(),
 				'type'              => $product->get_type(),
