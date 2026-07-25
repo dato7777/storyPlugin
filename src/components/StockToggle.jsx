@@ -7,10 +7,14 @@ export default function StockToggle({ status, onChange, disabled = false }) {
       className={`sp-stock-toggle ${inStock ? 'is-on' : 'is-off'}`}
       disabled={disabled}
       aria-pressed={inStock}
+      aria-label={inStock ? 'In stock' : 'Out of stock'}
       onClick={() => onChange(inStock ? 'outofstock' : 'instock')}
     >
-      <span className="sp-stock-toggle-knob" />
-      <span className="sp-stock-toggle-label">{inStock ? 'In stock' : 'Out of stock'}</span>
+      <span className="sp-stock-toggle-knob" aria-hidden="true" />
+      <span className="sp-stock-toggle-label" data-state={inStock ? 'in' : 'out'}>
+        <span className="sp-stock-toggle-label-in">In stock</span>
+        <span className="sp-stock-toggle-label-out">Out of stock</span>
+      </span>
     </button>
   );
 }

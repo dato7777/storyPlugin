@@ -9,7 +9,9 @@ const blank = {
   price: '',
   description: '',
   stock_qty: 0,
+  unlimited: true,
   stock_status: 'instock',
+  enabled: true,
   category_ids: [],
   image: '',
 };
@@ -38,12 +40,19 @@ export default function ProductEditPanel({
       setTab('basics');
       return;
     }
+    const isDisabled =
+      product.enabled === false ||
+      product.catalog_visibility === 'hidden' ||
+      (product.status && product.status !== 'publish');
+    const unlimited = product.manage_stock !== true;
     setForm({
       name: product.name || '',
       price: product.price || '',
       description: product.description || '',
-      stock_qty: product.stock_qty ?? 0,
+      stock_qty: unlimited ? 0 : product.stock_qty ?? 0,
+      unlimited,
       stock_status: product.stock_status || 'instock',
+      enabled: !isDisabled,
       category_ids: product.category_ids || [],
       image: product.image || '',
     });
@@ -74,8 +83,9 @@ export default function ProductEditPanel({
         name: form.name,
         price: form.price,
         description: form.description,
-        stock_quantity: Number(form.stock_qty) || 0,
+        stock_quantity: form.unlimited ? null : Number(form.stock_qty) || 0,
         stock_status: form.stock_status,
+        enabled: form.enabled,
         category_ids: form.category_ids,
       },
       imageFile
@@ -176,18 +186,18 @@ export default function ProductEditPanel({
                   </label>
 
                   <label>
-                    Status
+                    Storefront
                     <select
-                      value={form.stock_status === 'instock' ? 'enabled' : 'disabled'}
+                      value={form.enabled ? 'enabled' : 'disabled'}
                       onChange={(e) =>
                         setForm((f) => ({
                           ...f,
-                          stock_status: e.target.value === 'enabled' ? 'instock' : 'outofstock',
+                          enabled: e.target.value === 'enabled',
                         }))
                       }
                     >
-                      <option value="enabled">Enabled (in stock)</option>
-                      <option value="disabled">Disabled (out of stock)</option>
+                      <option value="enabled">Enabled (visible in store)</option>
+                      <option value="disabled">Disabled (hidden from store)</option>
                     </select>
                   </label>
 
@@ -217,16 +227,46 @@ export default function ProductEditPanel({
                   <div className="sp-field-row">
                     <div>
                       <span className="sp-label">Quantity</span>
-                      <QuantityStepper
-                        value={form.stock_qty}
-                        onChange={(qty) =>
-                          setForm((f) => ({
-                            ...f,
-                            stock_qty: qty,
-                            stock_status: qty > 0 ? 'instock' : f.stock_status,
-                          }))
-                        }
-                      />
+                      <div className="sp-qty-mode">
+                        <button
+                          type="button"
+                          className={`sp-qty-mode-btn ${form.unlimited ? 'is-active' : ''}`}
+                          onClick={() => setForm((f) => ({ ...f, unlimited: true }))}
+                        >
+                          ∞ Unlimited
+                        </button>
+                        <button
+                          type="button"
+                          className={`sp-qty-mode-btn ${!form.unlimited ? 'is-active' : ''}`}
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              unlimited: false,
+                              stock_qty: f.stock_qty > 0 ? f.stock_qty : 1,
+                            }))
+                          }
+                        >
+                          Limited
+                        </button>
+                      </div>
+                      {!form.unlimited ? (
+                        <div className="sp-qty-stepper-wrap">
+                          <QuantityStepper
+                            value={form.stock_qty}
+                            onChange={(qty) =>
+                              setForm((f) => ({
+                                ...f,
+                                stock_qty: qty,
+                                stock_status: qty > 0 ? 'instock' : f.stock_status,
+                              }))
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <p className="sp-help sp-qty-help">
+                          Default: unlimited stock. Switch to Limited to set an exact quantity.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <span className="sp-label">Availability</span>

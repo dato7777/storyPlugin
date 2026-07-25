@@ -249,7 +249,7 @@ class StoryPhone_IM_REST_Controller {
 		$collection   = sanitize_key( (string) $request->get_param( 'collection' ) );
 		$stock_status = sanitize_key( (string) $request->get_param( 'stock_status' ) );
 
-		$allowed_collections = array( 'all', 'outofstock', 'disabled' );
+		$allowed_collections = array( 'all', 'categories', 'outofstock', 'disabled' );
 		if ( ! in_array( $collection, $allowed_collections, true ) ) {
 			$collection = 'all';
 		}
@@ -264,9 +264,8 @@ class StoryPhone_IM_REST_Controller {
 			$status       = 'publish';
 			$stock_status = 'outofstock';
 		} elseif ( 'disabled' === $collection ) {
-			$status       = array( 'draft', 'private' );
-			$stock_status = '';
-		} elseif ( 'all' === $collection ) {
+			return self::list_disabled_products( $page, $per_page, $search, $category );
+		} elseif ( 'all' === $collection || 'categories' === $collection ) {
 			$status = 'publish';
 		}
 
@@ -279,6 +278,11 @@ class StoryPhone_IM_REST_Controller {
 			'order'    => 'DESC',
 			'return'   => 'objects',
 		);
+
+		// Out of stock collection should only show storefront-visible products.
+		if ( 'outofstock' === $collection ) {
+			$query_args['visibility'] = 'visible';
+		}
 
 		if ( '' !== $stock_status ) {
 			$allowed_stock = array( 'instock', 'outofstock', 'onbackorder' );
@@ -323,6 +327,101 @@ class StoryPhone_IM_REST_Controller {
 	}
 
 	/**
+	 * List disabled products: draft/private OR catalog visibility hidden.
+	 *
+	 * @param int    $page     Page.
+	 * @param int    $per_page Per page.
+	 * @param string $search   Search.
+	 * @param int    $category Category term ID.
+	 * @return WP_REST_Response
+	 */
+	private static function list_disabled_products( $page, $per_page, $search, $category ) {
+		$ids = self::get_disabled_product_ids( $search, $category );
+		rsort( $ids, SORT_NUMERIC );
+
+		$total = count( $ids );
+		$pages = max( 1, (int) ceil( $total / $per_page ) );
+		$page  = min( $page, $pages );
+		$slice = array_slice( $ids, ( $page - 1 ) * $per_page, $per_page );
+
+		$products = array();
+		foreach ( $slice as $product_id ) {
+			$product = wc_get_product( $product_id );
+			if ( $product ) {
+				$products[] = self::format_product_summary( $product );
+			}
+		}
+
+		return rest_ensure_response(
+			array(
+				'products'   => $products,
+				'total'      => $total,
+				'pages'      => $pages,
+				'page'       => $page,
+				'per_page'   => $per_page,
+				'collection' => 'disabled',
+			)
+		);
+	}
+
+	/**
+	 * Collect product IDs considered disabled in the inventory UI.
+	 *
+	 * @param string $search   Search string.
+	 * @param int    $category Category term ID.
+	 * @return int[]
+	 */
+	private static function get_disabled_product_ids( $search = '', $category = 0 ) {
+		$base = array(
+			'limit'  => -1,
+			'return' => 'ids',
+			'orderby'=> 'ID',
+			'order'  => 'DESC',
+		);
+
+		if ( '' !== $search ) {
+			$base['s'] = $search;
+		}
+
+		if ( $category > 0 ) {
+			$term = get_term( $category, 'product_cat' );
+			if ( $term && ! is_wp_error( $term ) ) {
+				$base['category'] = array( $term->slug );
+			}
+		}
+
+		$hidden_query = new WC_Product_Query(
+			array_merge(
+				$base,
+				array(
+					'status'     => 'publish',
+					'visibility' => 'hidden',
+				)
+			)
+		);
+		$hidden_ids = $hidden_query->get_products();
+		if ( ! is_array( $hidden_ids ) ) {
+			$hidden_ids = array();
+		}
+
+		$draft_query = new WC_Product_Query(
+			array_merge(
+				$base,
+				array(
+					'status' => array( 'draft', 'private' ),
+				)
+			)
+		);
+		$draft_ids = $draft_query->get_products();
+		if ( ! is_array( $draft_ids ) ) {
+			$draft_ids = array();
+		}
+
+		$ids = array_unique( array_map( 'absint', array_merge( $hidden_ids, $draft_ids ) ) );
+		return array_values( array_filter( $ids ) );
+	}
+
+	/**
 	 * GET /stats — collection counts for sidebar.
 	 *
 	 * @param WP_REST_Request $request Request.
@@ -338,13 +437,10 @@ class StoryPhone_IM_REST_Controller {
 			array(
 				'status'       => 'publish',
 				'stock_status' => 'outofstock',
+				'visibility'   => 'visible',
 			)
 		);
-		$disabled = self::count_products(
-			array(
-				'status' => array( 'draft', 'private' ),
-			)
-		);
+		$disabled = count( self::get_disabled_product_ids() );
 
 		return rest_ensure_response(
 			array(
@@ -435,9 +531,14 @@ class StoryPhone_IM_REST_Controller {
 			} elseif ( 'mark_instock' === $action ) {
 				$product->set_stock_status( 'instock' );
 			} elseif ( 'disable' === $action ) {
-				$product->set_status( 'draft' );
+				// Hide from storefront; keep publish so re-enable is one click.
+				$product->set_catalog_visibility( 'hidden' );
+				if ( 'trash' !== $product->get_status() ) {
+					$product->set_status( 'publish' );
+				}
 			} elseif ( 'enable' === $action ) {
 				$product->set_status( 'publish' );
+				$product->set_catalog_visibility( 'visible' );
 			}
 
 			$product->save();
@@ -537,7 +638,7 @@ class StoryPhone_IM_REST_Controller {
 			$changed['price'] = $price;
 		}
 
-		if ( isset( $params['stock_quantity'] ) ) {
+		if ( array_key_exists( 'stock_quantity', $params ) ) {
 			$qty = $params['stock_quantity'];
 			if ( null === $qty || '' === $qty ) {
 				$product->set_manage_stock( false );
@@ -566,6 +667,34 @@ class StoryPhone_IM_REST_Controller {
 			if ( in_array( $post_status, $allowed_status, true ) ) {
 				$product->set_status( $post_status );
 				$changed['status'] = $post_status;
+			}
+		}
+
+		if ( isset( $params['catalog_visibility'] ) ) {
+			$visibility = sanitize_key( $params['catalog_visibility'] );
+			$allowed_vis = array( 'visible', 'catalog', 'search', 'hidden' );
+			if ( in_array( $visibility, $allowed_vis, true ) ) {
+				$product->set_catalog_visibility( $visibility );
+				$changed['catalog_visibility'] = $visibility;
+			}
+		}
+
+		// Convenience flag from the edit UI: enabled = visible on storefront.
+		if ( array_key_exists( 'enabled', $params ) ) {
+			$enabled = filter_var( $params['enabled'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+			if ( null === $enabled ) {
+				$enabled = (bool) $params['enabled'];
+			}
+			if ( $enabled ) {
+				$product->set_status( 'publish' );
+				$product->set_catalog_visibility( 'visible' );
+				$changed['enabled'] = '1';
+			} else {
+				$product->set_catalog_visibility( 'hidden' );
+				if ( 'trash' !== $product->get_status() ) {
+					$product->set_status( 'publish' );
+				}
+				$changed['enabled'] = '0';
 			}
 		}
 
@@ -651,7 +780,11 @@ class StoryPhone_IM_REST_Controller {
 			}
 		}
 
-		$stock_qty = isset( $params['stock_quantity'] ) ? absint( $params['stock_quantity'] ) : 0;
+		// Default to unlimited stock (∞) unless a limited quantity is provided.
+		$has_limited_qty = array_key_exists( 'stock_quantity', $params )
+			&& null !== $params['stock_quantity']
+			&& '' !== $params['stock_quantity'];
+		$stock_qty       = $has_limited_qty ? absint( $params['stock_quantity'] ) : null;
 
 		$product = new WC_Product_Simple();
 		$product->set_name( $name );
@@ -660,8 +793,13 @@ class StoryPhone_IM_REST_Controller {
 		$product->set_sku( $sku );
 		$product->set_regular_price( $price );
 		$product->set_price( $price );
-		$product->set_manage_stock( true );
-		$product->set_stock_quantity( $stock_qty );
+		if ( $has_limited_qty ) {
+			$product->set_manage_stock( true );
+			$product->set_stock_quantity( $stock_qty );
+		} else {
+			$product->set_manage_stock( false );
+			$product->set_stock_quantity( null );
+		}
 		$product->set_stock_status( $stock_status );
 
 		if ( ! empty( $params['description'] ) ) {
@@ -694,7 +832,7 @@ class StoryPhone_IM_REST_Controller {
 				'name'           => $name,
 				'sku'            => $sku,
 				'price'          => $price,
-				'stock_quantity' => (string) $stock_qty,
+				'stock_quantity' => $has_limited_qty ? (string) $stock_qty : 'unlimited',
 				'stock_status'   => $stock_status,
 				'category_ids'   => implode( ',', $cat_ids ),
 			)
@@ -1114,16 +1252,23 @@ class StoryPhone_IM_REST_Controller {
 			}
 		}
 
+		$visibility = $product->get_catalog_visibility();
+		$post_status = $product->get_status();
+		$is_disabled = ( 'hidden' === $visibility ) || ! in_array( $post_status, array( 'publish' ), true );
+
 		return array(
-			'id'           => $product->get_id(),
-			'name'         => $product->get_name(),
-			'sku'          => $product->get_sku(),
-			'price'        => $product->get_regular_price(),
-			'stock_qty'    => $product->get_stock_quantity(),
-			'stock_status' => $product->get_stock_status(),
-			'status'       => $product->get_status(),
-			'image'        => $image_url ? esc_url_raw( $image_url ) : '',
-			'categories'   => $categories,
+			'id'                 => $product->get_id(),
+			'name'               => $product->get_name(),
+			'sku'                => $product->get_sku(),
+			'price'              => $product->get_regular_price(),
+			'stock_qty'          => $product->get_stock_quantity(),
+			'manage_stock'       => (bool) $product->get_manage_stock(),
+			'stock_status'       => $product->get_stock_status(),
+			'status'             => $post_status,
+			'catalog_visibility' => $visibility,
+			'enabled'            => ! $is_disabled,
+			'image'              => $image_url ? esc_url_raw( $image_url ) : '',
+			'categories'         => $categories,
 		);
 	}
 

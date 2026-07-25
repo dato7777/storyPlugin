@@ -33,6 +33,46 @@ export function buildCategoryTree(categories) {
 }
 
 /**
+ * Tree of categories that have products (count > 0), keeping ancestors
+ * so the hierarchy remains readable even when only children have items.
+ *
+ * @param {Array<{id:number,name:string,parent:number,count?:number}>} categories
+ * @returns {Array<{id:number,name:string,parent:number,count:number,children:Array,itemCount:number,totalItems:number}>}
+ */
+export function buildPopulatedCategoryTree(categories) {
+  const full = buildCategoryTree(categories);
+
+  function prune(nodes) {
+    return nodes
+      .map((node) => {
+        const children = prune(node.children || []);
+        const itemCount = Number(node.count) || 0;
+        const childTotal = children.reduce((sum, c) => sum + (c.totalItems || 0), 0);
+        const totalItems = itemCount + childTotal;
+        if (totalItems < 1) return null;
+        return {
+          ...node,
+          children,
+          itemCount,
+          totalItems,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  return prune(full);
+}
+
+/**
+ * Count categories that have at least one linked product (direct count > 0).
+ *
+ * @param {Array<{count?:number}>} categories
+ */
+export function countCategoriesWithItems(categories) {
+  return (categories || []).filter((c) => (Number(c.count) || 0) > 0).length;
+}
+
+/**
  * Flat list of root (main) categories only.
  *
  * @param {Array<{id:number,parent:number}>} categories

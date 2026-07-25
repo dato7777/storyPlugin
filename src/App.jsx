@@ -13,9 +13,10 @@ import {
   updateProduct,
   uploadProductImage,
 } from './api.js';
-import { flattenCategoriesForSelect } from './categories.js';
+import { countCategoriesWithItems, flattenCategoriesForSelect } from './categories.js';
 import BulkBar from './components/BulkBar.jsx';
 import CategoryNav from './components/CategoryNav.jsx';
+import CategoryTreeView from './components/CategoryTreeView.jsx';
 import ProductList from './components/ProductList.jsx';
 import ProductEditPanel from './components/ProductEditPanel.jsx';
 import Toast from './components/Toast.jsx';
@@ -25,12 +26,12 @@ const emptyCreateForm = {
   price: '',
   sku: '',
   category_ids: [],
-  stock_quantity: 0,
   imageFile: null,
 };
 
 const COLLECTION_TITLES = {
   all: 'All items',
+  categories: 'All Categories',
   outofstock: 'Out of stock',
   disabled: 'Disabled',
 };
@@ -74,20 +75,29 @@ export default function App() {
     [categories, category]
   );
 
+  const showCategoryTree = collection === 'categories' && !category;
+  const populatedCategoryCount = useMemo(
+    () => countCategoriesWithItems(categories),
+    [categories]
+  );
+
   const headerTitle = activeCategory?.name || COLLECTION_TITLES[collection] || 'All items';
 
   const headerSubtitle = useMemo(() => {
     if (activeCategory) {
       return 'Products in this category. Edit or delete the category below.';
     }
+    if (showCategoryTree) {
+      return 'Interactive map of your category structure — only categories that contain products.';
+    }
     if (collection === 'outofstock') {
-      return 'Published products that are currently out of stock.';
+      return 'Visible store products that are currently out of stock.';
     }
     if (collection === 'disabled') {
-      return 'Draft or private products that are not visible in the store.';
+      return 'Products hidden from the store (catalog visibility) or saved as draft.';
     }
     return 'All published items, whether they belong to a category or not.';
-  }, [activeCategory, collection]);
+  }, [activeCategory, collection, showCategoryTree]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -108,6 +118,15 @@ export default function App() {
   }, []);
 
   const loadProducts = useCallback(async () => {
+    if (collection === 'categories' && !category) {
+      setProducts([]);
+      setPages(1);
+      setTotal(0);
+      setSelectedIds(new Set());
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await fetchProducts({
@@ -115,7 +134,7 @@ export default function App() {
         perPage: 24,
         search,
         category,
-        collection,
+        collection: collection === 'categories' ? 'all' : collection,
       });
       setProducts(data.products || []);
       setPages(data.pages || 1);
@@ -149,16 +168,28 @@ export default function App() {
 
   function selectCategory(id) {
     setCategory(id);
+    if (collection === 'all' || collection === 'categories') {
+      setCollection('categories');
+    }
     setPage(1);
     setSelectedIds(new Set());
   }
 
   function selectCollection(id) {
     setCollection(id);
-    if (id === 'all') setCategory(0);
+    if (id === 'all' || id === 'categories') setCategory(0);
     setPage(1);
     setSelectedIds(new Set());
   }
+
+  function backToCategoryTree() {
+    setCategory(0);
+    setCollection('categories');
+    setPage(1);
+    setSelectedIds(new Set());
+  }
+
+  const showCategoryBack = Boolean(activeCategory) && collection === 'categories';
 
   async function openProduct(id) {
     setSelectedId(id);
@@ -267,7 +298,7 @@ export default function App() {
         price: createForm.price,
         sku: createForm.sku,
         category_ids: createForm.category_ids,
-        stock_quantity: Number(createForm.stock_quantity) || 0,
+        stock_quantity: null,
       });
       if (createForm.imageFile && result.product?.id) {
         await uploadProductImage(result.product.id, createForm.imageFile);
@@ -373,6 +404,15 @@ export default function App() {
         <section className="sp-content">
           <header className="sp-content-header">
             <div className="sp-content-heading">
+              {showCategoryBack ? (
+                <button
+                  type="button"
+                  className="sp-back-btn"
+                  onClick={backToCategoryTree}
+                >
+                  <span aria-hidden="true">←</span> Back to All Categories
+                </button>
+              ) : null}
               <div className="sp-title-row">
                 <h2 className="sp-content-title">{headerTitle}</h2>
                 {activeCategory ? (
@@ -399,42 +439,55 @@ export default function App() {
                 <div className="sp-category-chip">
                   <span className="sp-category-chip-dot" aria-hidden="true" />
                   Category · {activeCategory.count ?? 0} linked
-                  {collection !== 'all' ? ` · filtered: ${COLLECTION_TITLES[collection]}` : ''}
+                  {collection !== 'all' && collection !== 'categories'
+                    ? ` · filtered: ${COLLECTION_TITLES[collection]}`
+                    : ''}
                 </div>
               ) : null}
             </div>
-            <div className="sp-content-actions">
-              <div className="sp-search-wrap">
-                <span className="sp-search-icon" aria-hidden="true">
-                  ⌕
-                </span>
-                <input
-                  type="search"
-                  className="sp-search"
-                  placeholder={`Search ${headerTitle}…`}
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  aria-label="Search products"
-                />
+            {!showCategoryTree ? (
+              <div className="sp-content-actions">
+                <div className="sp-search-wrap">
+                  <span className="sp-search-icon" aria-hidden="true">
+                    ⌕
+                  </span>
+                  <input
+                    type="search"
+                    className="sp-search"
+                    placeholder={`Search ${headerTitle}…`}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    aria-label="Search products"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="sp-btn sp-btn-primary"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  + Create
+                </button>
               </div>
-              <button
-                type="button"
-                className="sp-btn sp-btn-primary"
-                onClick={() => setCreateOpen(true)}
-              >
-                + Create
-              </button>
-            </div>
+            ) : null}
           </header>
 
           <div className="sp-content-meta">
             <span>
-              {loading ? 'Loading…' : `${total} item${total === 1 ? '' : 's'}`}
+              {showCategoryTree
+                ? `${populatedCategoryCount} categor${populatedCategoryCount === 1 ? 'y' : 'ies'} with items`
+                : loading
+                  ? 'Loading…'
+                  : `${total} item${total === 1 ? '' : 's'}`}
             </span>
           </div>
 
           <main className="sp-main">
-            {loading ? (
+            {showCategoryTree ? (
+              <CategoryTreeView
+                categories={categories}
+                onOpenCategory={selectCategory}
+              />
+            ) : loading ? (
               <div className="sp-empty">Loading products…</div>
             ) : products.length === 0 ? (
               <div className="sp-empty">No products found.</div>
@@ -451,7 +504,7 @@ export default function App() {
               />
             )}
 
-            {pages > 1 && (
+            {!showCategoryTree && pages > 1 && (
               <div className="sp-pagination">
                 <button
                   type="button"
@@ -478,12 +531,14 @@ export default function App() {
         </section>
       </div>
 
-      <BulkBar
-        count={selectedIds.size}
-        saving={saving}
-        onClear={() => setSelectedIds(new Set())}
-        onAction={handleBulkAction}
-      />
+      {!showCategoryTree ? (
+        <BulkBar
+          count={selectedIds.size}
+          saving={saving}
+          onClear={() => setSelectedIds(new Set())}
+          onAction={handleBulkAction}
+        />
+      ) : null}
 
       <ProductEditPanel
         open={panelOpen}
@@ -533,17 +588,10 @@ export default function App() {
                     onChange={(e) => setCreateForm((f) => ({ ...f, sku: e.target.value }))}
                   />
                 </label>
-                <label>
-                  Starting quantity
-                  <input
-                    type="number"
-                    min="0"
-                    value={createForm.stock_quantity}
-                    onChange={(e) =>
-                      setCreateForm((f) => ({ ...f, stock_quantity: e.target.value }))
-                    }
-                  />
-                </label>
+                <p className="sp-help">
+                  New items default to unlimited stock (∞). Set a limited quantity later in the
+                  edit panel.
+                </p>
                 <label>
                   Primary category
                   <select

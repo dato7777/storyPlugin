@@ -1,5 +1,4 @@
 import StockToggle from './StockToggle.jsx';
-import QuantityStepper from './QuantityStepper.jsx';
 
 function stripHtml(value) {
   if (!value) return '';
@@ -57,14 +56,16 @@ export default function ProductList({
         const checked = selectedIds.has(product.id);
         const desc = stripHtml(product.description || product.short_description || '');
         const cats = (product.categories || []).map((c) => c.name).join(' · ');
-        const isDraft = product.status && product.status !== 'publish';
-
+        const isDisabled =
+          product.enabled === false ||
+          product.catalog_visibility === 'hidden' ||
+          (product.status && product.status !== 'publish');
         return (
           <article
             key={product.id}
             className={`sp-list-row ${active ? 'is-active' : ''} ${
               product.stock_status === 'outofstock' ? 'is-out' : ''
-            } ${checked ? 'is-checked' : ''} ${isDraft ? 'is-disabled-item' : ''}`}
+            } ${checked ? 'is-checked' : ''} ${isDisabled ? 'is-disabled-item' : ''}`}
             role="listitem"
           >
             <label
@@ -95,7 +96,7 @@ export default function ProductList({
               <div className="sp-list-copy">
                 <h3 className="sp-list-name">
                   {product.name}
-                  {isDraft ? <span className="sp-badge-soft">Disabled</span> : null}
+                  {isDisabled ? <span className="sp-badge-soft">Disabled</span> : null}
                 </h3>
                 <p className="sp-list-meta">
                   {product.sku ? `SKU ${product.sku}` : 'No SKU'}
@@ -107,15 +108,13 @@ export default function ProductList({
             </button>
 
             <div className="sp-list-controls" onClick={(e) => e.stopPropagation()}>
-              <QuantityStepper
-                value={product.stock_qty ?? 0}
-                onChange={(qty) =>
-                  onQuickUpdate(product.id, {
-                    stock_quantity: qty,
-                    stock_status: qty > 0 ? 'instock' : 'outofstock',
-                  })
-                }
-              />
+              <span
+                className="sp-stock-infinity"
+                title="Stock quantity is managed in the edit panel"
+                aria-label="Unlimited by default — open item to set quantity"
+              >
+                ∞
+              </span>
               <StockToggle
                 status={product.stock_status}
                 onChange={(status) => onQuickUpdate(product.id, { stock_status: status })}
