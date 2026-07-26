@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { buildCategoryTree, countCategoriesWithItems } from '../categories.js';
+import { buildCategoryTree } from '../categories.js';
 
 function CategoryBranch({
   nodes,
@@ -103,6 +103,7 @@ function categoryContainsId(node, id) {
 const COLLECTIONS = [
   { id: 'all', label: 'All items', icon: '◈' },
   { id: 'categories', label: 'All Categories', icon: '▤' },
+  { id: 'instock', label: 'In Stock', icon: '●' },
   { id: 'outofstock', label: 'Out of stock', icon: '○' },
   { id: 'disabled', label: 'Disabled', icon: '⊘' },
 ];
@@ -146,7 +147,9 @@ export default function CategoryNav({
 
   function countFor(id) {
     if (id === 'all') return stats?.all ?? 0;
-    if (id === 'categories') return countCategoriesWithItems(categories);
+    // All Categories badge = every category, including empty.
+    if (id === 'categories') return categories?.length ?? 0;
+    if (id === 'instock') return stats?.instock ?? 0;
     if (id === 'outofstock') return stats?.outofstock ?? 0;
     if (id === 'disabled') return stats?.disabled ?? 0;
     return 0;

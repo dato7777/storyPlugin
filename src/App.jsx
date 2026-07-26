@@ -15,7 +15,7 @@ import {
   uploadProductImage,
   deleteProductImage,
 } from './api.js';
-import { countCategoriesWithItems, flattenCategoriesForSelect } from './categories.js';
+import { flattenCategoriesForSelect } from './categories.js';
 import BulkBar from './components/BulkBar.jsx';
 import CategoryNav from './components/CategoryNav.jsx';
 import CategoryTreeView from './components/CategoryTreeView.jsx';
@@ -34,6 +34,7 @@ const emptyCreateForm = {
 const COLLECTION_TITLES = {
   all: 'All items',
   categories: 'All Categories',
+  instock: 'In Stock',
   outofstock: 'Out of stock',
   disabled: 'Disabled',
 };
@@ -44,7 +45,7 @@ export default function App() {
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [stats, setStats] = useState({ all: 0, outofstock: 0, disabled: 0 });
+  const [stats, setStats] = useState({ all: 0, instock: 0, outofstock: 0, disabled: 0 });
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -83,10 +84,6 @@ export default function App() {
   );
 
   const showCategoryTree = collection === 'categories' && !category;
-  const populatedCategoryCount = useMemo(
-    () => countCategoriesWithItems(categories),
-    [categories]
-  );
 
   const headerTitle = activeCategory?.name || COLLECTION_TITLES[collection] || 'All items';
 
@@ -95,15 +92,18 @@ export default function App() {
       return 'Products in this category. Edit or delete the category below.';
     }
     if (showCategoryTree) {
-      return 'Interactive map of your category structure — only categories that contain products.';
+      return 'Interactive map of your category structure.';
+    }
+    if (collection === 'instock') {
+      return 'Enabled products that are in stock (Disabled and out of stock are excluded).';
     }
     if (collection === 'outofstock') {
-      return 'Visible store products that are currently out of stock.';
+      return 'Enabled products that are out of stock (Disabled items are not listed here).';
     }
     if (collection === 'disabled') {
-      return 'Products hidden from the store (catalog visibility) or saved as draft.';
+      return 'Disabled only — off the website and search (any stock level).';
     }
-    return 'All published items, whether they belong to a category or not.';
+    return 'Every inventory item, including Disabled / drafts.';
   }, [activeCategory, collection, showCategoryTree]);
 
   const loadStats = useCallback(async () => {
@@ -111,6 +111,7 @@ export default function App() {
       const data = await fetchStats();
       setStats({
         all: data.all || 0,
+        instock: data.instock || 0,
         outofstock: data.outofstock || 0,
         disabled: data.disabled || 0,
       });
@@ -598,15 +599,11 @@ export default function App() {
             ) : null}
           </header>
 
-          <div className="sp-content-meta">
-            <span>
-              {showCategoryTree
-                ? `${populatedCategoryCount} categor${populatedCategoryCount === 1 ? 'y' : 'ies'} with items`
-                : loading
-                  ? 'Loading…'
-                  : `${total} item${total === 1 ? '' : 's'}`}
-            </span>
-          </div>
+          {!showCategoryTree ? (
+            <div className="sp-content-meta">
+              <span>{loading ? 'Loading…' : `${total} item${total === 1 ? '' : 's'}`}</span>
+            </div>
+          ) : null}
 
           <main className="sp-main">
             {showCategoryTree ? (

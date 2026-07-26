@@ -141,7 +141,9 @@ export default function CategoryTreeView({
   onDeleteCategories,
   saving = false,
 }) {
-  const [includeEmpty, setIncludeEmpty] = useState(false);
+  // Default to All Categories (includes empty) when opening from the sidebar.
+  const [scope, setScope] = useState('all'); // 'active' | 'all'
+  const includeEmpty = scope === 'all';
   const [expandMode, setExpandMode] = useState('expand');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
 
@@ -198,27 +200,38 @@ export default function CategoryTreeView({
     setSelectedIds(new Set());
   }
 
-  const emptyCount = categories.filter((c) => (Number(c.count) || 0) < 1).length;
   const withItems = categories.filter((c) => (Number(c.count) || 0) > 0).length;
+  const totalCategories = categories.length;
 
   return (
     <div className="sp-ctree">
       <div className="sp-ctree-toolbar">
         <div className="sp-ctree-toolbar-left">
-          <p className="sp-ctree-hint">
-            {includeEmpty
-              ? `${categories.length} categories · ${withItems} with items · ${emptyCount} empty`
-              : `${withItems} categor${withItems === 1 ? 'y' : 'ies'} with items`}
-          </p>
-          <label className={`sp-check sp-ctree-include ${includeEmpty ? 'is-checked' : ''}`}>
-            <input
-              type="checkbox"
-              checked={includeEmpty}
-              onChange={(e) => setIncludeEmpty(e.target.checked)}
-            />
-            <span className="sp-check-box" aria-hidden="true" />
-            <span className="sp-check-label">Include categories without items</span>
-          </label>
+          <div
+            className={`sp-scope-toggle scope-${scope}`}
+            role="group"
+            aria-label="Category scope"
+          >
+            <span className="sp-scope-toggle-thumb" aria-hidden="true" />
+            <button
+              type="button"
+              className={`sp-scope-toggle-btn ${scope === 'active' ? 'is-active' : ''}`}
+              aria-pressed={scope === 'active'}
+              onClick={() => setScope('active')}
+            >
+              <span className="sp-scope-toggle-text">Active Categories</span>
+              <span className="sp-scope-toggle-count">{withItems}</span>
+            </button>
+            <button
+              type="button"
+              className={`sp-scope-toggle-btn ${scope === 'all' ? 'is-active' : ''}`}
+              aria-pressed={scope === 'all'}
+              onClick={() => setScope('all')}
+            >
+              <span className="sp-scope-toggle-text">All Categories</span>
+              <span className="sp-scope-toggle-count">{totalCategories}</span>
+            </button>
+          </div>
         </div>
 
         <div className="sp-ctree-toolbar-actions">
@@ -282,7 +295,7 @@ export default function CategoryTreeView({
         <div className="sp-empty">
           {includeEmpty
             ? 'No categories yet. Create your first category to start building the tree.'
-            : 'No categories with products yet. Enable “Include categories without items”, or create a new category.'}
+            : 'No active categories yet. Switch to “All Categories”, or create a category and add products.'}
         </div>
       ) : (
         <div className="sp-ctree-canvas" role="tree" aria-label="Category structure">

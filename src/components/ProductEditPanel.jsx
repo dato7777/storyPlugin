@@ -3,16 +3,7 @@ import { createPortal } from 'react-dom';
 import { flattenCategoriesForSelect } from '../categories.js';
 import StockToggle from './StockToggle.jsx';
 import QuantityStepper from './QuantityStepper.jsx';
-
-function stripHtml(value) {
-  if (!value) return '';
-  return String(value)
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+import RichTextEditor from './RichTextEditor.jsx';
 
 const blank = {
   name: '',
@@ -65,7 +56,7 @@ export default function ProductEditPanel({
       name: product.name || '',
       price: product.price || '',
       sku: product.sku || '',
-      description: stripHtml(rawDesc),
+      description: rawDesc,
       stock_qty: unlimited ? 0 : product.stock_qty ?? 0,
       unlimited,
       stock_status: product.stock_status || 'instock',
@@ -323,8 +314,8 @@ export default function ProductEditPanel({
                         }))
                       }
                     >
-                      <option value="enabled">Enabled (visible in store)</option>
-                      <option value="disabled">Disabled (hidden from store)</option>
+                      <option value="enabled">Enabled (shop + search)</option>
+                      <option value="disabled">Disabled (off website & search)</option>
                     </select>
                   </label>
 
@@ -407,17 +398,16 @@ export default function ProductEditPanel({
 
                 <div className="sp-card-block">
                   <h3 className="sp-card-block-title">Description</h3>
-                  <label>
-                    <textarea
-                      rows={5}
-                      value={form.description}
-                      onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                      placeholder="Product description shown on the website"
-                    />
-                  </label>
+                  <RichTextEditor
+                    value={form.description}
+                    disabled={saving}
+                    onChange={(html) => setForm((f) => ({ ...f, description: html }))}
+                    placeholder="Product description shown on the website"
+                  />
                   <p className="sp-help">
-                    Saved to both the full description and short description so the storefront
-                    updates correctly.
+                    Format text with the toolbar, then use Preview to see how it will look. Press
+                    Enter for new lines — you do not need &amp;nbsp;. Saved to the storefront
+                    description fields on Save.
                   </p>
                 </div>
               </>

@@ -182,6 +182,15 @@ export function deleteProductImage(id, imageId) {
   });
 }
 
+export function uploadMedia(file) {
+  const form = new FormData();
+  form.append('image', file);
+  return request('media', {
+    method: 'POST',
+    body: form,
+  });
+}
+
 export function fetchCategories() {
   return request('categories');
 }
