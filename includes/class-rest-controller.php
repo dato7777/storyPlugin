@@ -1074,7 +1074,28 @@ class StoryPhone_IM_REST_Controller {
 		$product->set_stock_status( $stock_status );
 
 		if ( ! empty( $params['description'] ) ) {
-			$product->set_description( wp_kses_post( $params['description'] ) );
+			$desc = wp_kses_post( $params['description'] );
+			$product->set_description( $desc );
+			if ( ! array_key_exists( 'short_description', $params ) ) {
+				$product->set_short_description( $desc );
+			}
+		}
+
+		if ( array_key_exists( 'short_description', $params ) ) {
+			$product->set_short_description( wp_kses_post( $params['short_description'] ) );
+		}
+
+		// Enabled = publish + visible; Disabled = draft + hidden.
+		if ( array_key_exists( 'enabled', $params ) ) {
+			$enabled = filter_var( $params['enabled'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+			if ( null === $enabled ) {
+				$enabled = (bool) $params['enabled'];
+			}
+			if ( $enabled ) {
+				self::apply_product_enabled( $product );
+			} else {
+				self::apply_product_disabled( $product );
+			}
 		}
 
 		$cat_ids = array();
@@ -1092,6 +1113,16 @@ class StoryPhone_IM_REST_Controller {
 				__( 'Failed to create product.', 'storyphone-inventory-manager' ),
 				array( 'status' => 500 )
 			);
+		}
+
+		if ( array_key_exists( 'enabled', $params ) ) {
+			$enabled = filter_var( $params['enabled'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+			if ( null === $enabled ) {
+				$enabled = (bool) $params['enabled'];
+			}
+			if ( ! $enabled ) {
+				StoryPhone_IM_Storefront_Visibility::sync_hidden_visibility_terms( $product_id );
+			}
 		}
 
 		$product = wc_get_product( $product_id );

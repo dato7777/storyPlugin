@@ -21,12 +21,20 @@ import CategoryNav from './components/CategoryNav.jsx';
 import CategoryTreeView from './components/CategoryTreeView.jsx';
 import ProductList from './components/ProductList.jsx';
 import ProductEditPanel from './components/ProductEditPanel.jsx';
+import QuantityStepper from './components/QuantityStepper.jsx';
+import RichTextEditor from './components/RichTextEditor.jsx';
+import StockToggle from './components/StockToggle.jsx';
 import Toast from './components/Toast.jsx';
 
 const emptyCreateForm = {
   name: '',
   price: '',
   sku: '',
+  description: '',
+  stock_qty: 0,
+  unlimited: true,
+  stock_status: 'instock',
+  enabled: true,
   category_ids: [],
   imageFile: null,
 };
@@ -371,8 +379,12 @@ export default function App() {
         name: createForm.name,
         price: createForm.price,
         sku: createForm.sku,
+        description: createForm.description || '',
+        short_description: createForm.description || '',
         category_ids: createForm.category_ids,
-        stock_quantity: null,
+        stock_quantity: createForm.unlimited ? null : Number(createForm.stock_qty) || 0,
+        stock_status: createForm.stock_status,
+        enabled: createForm.enabled,
       });
       if (createForm.imageFile && result.product?.id) {
         await uploadProductImage(result.product.id, createForm.imageFile);
@@ -685,75 +697,164 @@ export default function App() {
         createPortal(
           <div className="sp-modal-backdrop" onClick={() => !saving && setCreateOpen(false)}>
             <div
-              className="sp-modal"
+              className="sp-modal sp-modal-lg"
               role="dialog"
               aria-modal="true"
               aria-labelledby="sp-create-title"
               onClick={(e) => e.stopPropagation()}
             >
               <h2 id="sp-create-title">Create item</h2>
-              <form className="sp-form" onSubmit={handleCreate}>
-                <label>
-                  Item name
-                  <input
-                    required
-                    value={createForm.name}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+              <form className="sp-form sp-form-create" onSubmit={handleCreate}>
+                <div className="sp-card-block">
+                  <h3 className="sp-card-block-title">About</h3>
+                  <label>
+                    Item name
+                    <input
+                      required
+                      maxLength={300}
+                      value={createForm.name}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                    />
+                    <span className="sp-char-count">{createForm.name.length}/300</span>
+                  </label>
+                  <label>
+                    SKU
+                    <input
+                      required
+                      value={createForm.sku}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, sku: e.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    Price ({settings.currencySymbol || '₪'})
+                    <input
+                      required
+                      inputMode="decimal"
+                      value={createForm.price}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, price: e.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    Storefront
+                    <select
+                      value={createForm.enabled ? 'enabled' : 'disabled'}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          enabled: e.target.value === 'enabled',
+                        }))
+                      }
+                    >
+                      <option value="enabled">Enabled (shop + search)</option>
+                      <option value="disabled">Disabled (off website & search)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Primary category
+                    <select
+                      value={createForm.category_ids[0] || ''}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          category_ids: e.target.value ? [Number(e.target.value)] : [],
+                        }))
+                      }
+                    >
+                      <option value="">None</option>
+                      {categoryOptions.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Image
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          imageFile: e.target.files?.[0] || null,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div className="sp-card-block">
+                  <h3 className="sp-card-block-title">Inventory</h3>
+                  <div className="sp-field-row">
+                    <div>
+                      <span className="sp-label">Quantity</span>
+                      <div className="sp-qty-mode">
+                        <button
+                          type="button"
+                          className={`sp-qty-mode-btn ${createForm.unlimited ? 'is-active' : ''}`}
+                          onClick={() => setCreateForm((f) => ({ ...f, unlimited: true }))}
+                        >
+                          ∞ Unlimited
+                        </button>
+                        <button
+                          type="button"
+                          className={`sp-qty-mode-btn ${!createForm.unlimited ? 'is-active' : ''}`}
+                          onClick={() =>
+                            setCreateForm((f) => ({
+                              ...f,
+                              unlimited: false,
+                              stock_qty: f.stock_qty > 0 ? f.stock_qty : 1,
+                            }))
+                          }
+                        >
+                          Limited
+                        </button>
+                      </div>
+                      {!createForm.unlimited ? (
+                        <div className="sp-qty-stepper-wrap">
+                          <QuantityStepper
+                            value={createForm.stock_qty}
+                            onChange={(qty) =>
+                              setCreateForm((f) => ({
+                                ...f,
+                                stock_qty: qty,
+                                stock_status: qty > 0 ? 'instock' : f.stock_status,
+                              }))
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <p className="sp-help sp-qty-help">
+                          Default: unlimited stock. Switch to Limited to set an exact quantity.
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <span className="sp-label">Availability</span>
+                      <StockToggle
+                        status={createForm.stock_status}
+                        onChange={(status) =>
+                          setCreateForm((f) => ({ ...f, stock_status: status }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sp-card-block">
+                  <h3 className="sp-card-block-title">Description</h3>
+                  <RichTextEditor
+                    value={createForm.description}
+                    disabled={saving}
+                    onChange={(html) => setCreateForm((f) => ({ ...f, description: html }))}
+                    placeholder="Product description shown on the website"
                   />
-                </label>
-                <label>
-                  Price
-                  <input
-                    required
-                    inputMode="decimal"
-                    value={createForm.price}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, price: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  SKU
-                  <input
-                    required
-                    value={createForm.sku}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, sku: e.target.value }))}
-                  />
-                </label>
-                <p className="sp-help">
-                  New items default to unlimited stock (∞). Set a limited quantity later in the
-                  edit panel.
-                </p>
-                <label>
-                  Primary category
-                  <select
-                    value={createForm.category_ids[0] || ''}
-                    onChange={(e) =>
-                      setCreateForm((f) => ({
-                        ...f,
-                        category_ids: e.target.value ? [Number(e.target.value)] : [],
-                      }))
-                    }
-                  >
-                    <option value="">None</option>
-                    {categoryOptions.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Image
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp"
-                    onChange={(e) =>
-                      setCreateForm((f) => ({
-                        ...f,
-                        imageFile: e.target.files?.[0] || null,
-                      }))
-                    }
-                  />
-                </label>
+                  <p className="sp-help">
+                    Same editor as edit — format text, preview, and insert images. Saved with the
+                    new item.
+                  </p>
+                </div>
+
                 <div className="sp-modal-actions">
                   <button
                     type="button"

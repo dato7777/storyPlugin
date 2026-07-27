@@ -1468,6 +1468,28 @@ body.storyphone-im-panel-open {
   width: min(380px, 100%);
 }
 
+.sp-modal-lg {
+  width: min(720px, 100%);
+  max-height: min(92vh, 920px);
+  overflow: auto;
+}
+
+.sp-form-create .sp-card-block {
+  margin-bottom: 4px;
+}
+
+.sp-form-create .sp-field-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .sp-form-create .sp-field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .sp-modal h2 {
   margin: 0 0 12px;
   font-size: 1.25rem;
