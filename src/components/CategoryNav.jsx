@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildCategoryTree } from '../categories.js';
+import {
+  IconAllItems,
+  IconCategories,
+  IconDisabled,
+  IconInStock,
+  IconOutOfStock,
+} from './NavIcons.jsx';
 
 function CategoryBranch({
   nodes,
@@ -28,6 +35,7 @@ function CategoryBranch({
         ]
           .filter(Boolean)
           .join(' ')}
+        data-nav-branch={node.id}
       >
         <div
           className={`sp-nav-row depth-${Math.min(depth, 3)} ${isActive ? 'is-active' : ''}`}
@@ -38,7 +46,10 @@ function CategoryBranch({
               className={`sp-nav-expand ${isOpen ? 'is-open' : ''}`}
               aria-label={isOpen ? 'Collapse subcategories' : 'Show subcategories'}
               aria-expanded={isOpen}
-              onClick={() => onToggle(node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(node.id, e.currentTarget.closest('.sp-nav-branch'));
+              }}
             >
               <span className="sp-nav-expand-icon" aria-hidden="true">
                 {isOpen ? '▼' : '▶'}
@@ -51,9 +62,20 @@ function CategoryBranch({
           <button
             type="button"
             className={`sp-nav-item ${hasChildren ? 'has-kids' : ''}`}
-            onClick={() => {
-              if (hasChildren) onToggle(node.id);
+            onClick={(e) => {
+              const branch = e.currentTarget.closest('.sp-nav-branch');
+              if (hasChildren) {
+                // Expand/collapse only — do not load products (avoids main-pane flash).
+                onToggle(node.id, branch);
+                return;
+              }
               onSelect(node.id);
+              // Leaf: gently bring the results pane into view.
+              requestAnimationFrame(() => {
+                document
+                  .querySelector('.sp-content')
+                  ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+              });
             }}
           >
             {hasChildren ? (
@@ -101,11 +123,11 @@ function categoryContainsId(node, id) {
 }
 
 const COLLECTIONS = [
-  { id: 'all', label: 'All items', icon: '◈' },
-  { id: 'categories', label: 'All Categories', icon: '▤' },
-  { id: 'instock', label: 'In Stock', icon: '●' },
-  { id: 'outofstock', label: 'Out of stock', icon: '○' },
-  { id: 'disabled', label: 'Disabled', icon: '⊘' },
+  { id: 'all', label: 'All items', Icon: IconAllItems },
+  { id: 'categories', label: 'All Categories', Icon: IconCategories },
+  { id: 'instock', label: 'In Stock', Icon: IconInStock },
+  { id: 'outofstock', label: 'Out of stock', Icon: IconOutOfStock },
+  { id: 'disabled', label: 'Disabled', Icon: IconDisabled },
 ];
 
 export default function CategoryNav({
@@ -136,18 +158,26 @@ export default function CategoryNav({
     });
   }, [selectedCategoryId, categories]);
 
-  function toggle(id) {
+  function toggle(id, branchEl) {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+
+    // After expand/collapse, keep the clicked branch in view (no page flash).
+    if (branchEl) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          branchEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
+      });
+    }
   }
 
   function countFor(id) {
     if (id === 'all') return stats?.all ?? 0;
-    // All Categories badge = every category, including empty.
     if (id === 'categories') return categories?.length ?? 0;
     if (id === 'instock') return stats?.instock ?? 0;
     if (id === 'outofstock') return stats?.outofstock ?? 0;
@@ -176,20 +206,23 @@ export default function CategoryNav({
         <section className="sp-nav-section">
           <h2 className="sp-nav-section-title">Collections</h2>
           <div className="sp-nav-collections">
-            {COLLECTIONS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`sp-nav-collection ${isActive(item.id) ? 'is-active' : ''}`}
-                onClick={() => onSelectCollection(item.id)}
-              >
-                <span className="sp-nav-collection-icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-                <span className="sp-nav-collection-label">{item.label}</span>
-                <span className="sp-nav-item-count">{countFor(item.id)}</span>
-              </button>
-            ))}
+            {COLLECTIONS.map((item) => {
+              const Icon = item.Icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`sp-nav-collection ${isActive(item.id) ? 'is-active' : ''}`}
+                  onClick={() => onSelectCollection(item.id)}
+                >
+                  <span className="sp-nav-collection-icon" aria-hidden="true">
+                    <Icon />
+                  </span>
+                  <span className="sp-nav-collection-label">{item.label}</span>
+                  <span className="sp-nav-item-count">{countFor(item.id)}</span>
+                </button>
+              );
+            })}
           </div>
         </section>
 

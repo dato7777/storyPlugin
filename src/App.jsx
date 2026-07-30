@@ -25,6 +25,7 @@ import {
 import BulkBar from './components/BulkBar.jsx';
 import CategoryNav from './components/CategoryNav.jsx';
 import CategoryTreeView from './components/CategoryTreeView.jsx';
+import { IconSearch } from './components/NavIcons.jsx';
 import ProductList from './components/ProductList.jsx';
 import ProductEditPanel from './components/ProductEditPanel.jsx';
 import QuantityStepper from './components/QuantityStepper.jsx';
@@ -655,7 +656,7 @@ export default function App() {
               <div className="sp-content-actions">
                 <div className="sp-search-wrap">
                   <span className="sp-search-icon" aria-hidden="true">
-                    ⌕
+                    <IconSearch />
                   </span>
                   <input
                     type="search"
@@ -665,13 +666,26 @@ export default function App() {
                     onChange={(e) => setSearchInput(e.target.value)}
                     aria-label="Search products"
                   />
+                  {searchInput ? (
+                    <button
+                      type="button"
+                      className="sp-search-clear"
+                      aria-label="Clear search"
+                      onClick={() => setSearchInput('')}
+                    >
+                      ×
+                    </button>
+                  ) : null}
                 </div>
                 <button
                   type="button"
-                  className="sp-btn sp-btn-primary"
+                  className="sp-btn sp-btn-primary sp-btn-create"
                   onClick={() => setCreateOpen(true)}
                 >
-                  + Create
+                  <span className="sp-btn-create-plus" aria-hidden="true">
+                    +
+                  </span>
+                  Create item
                 </button>
               </div>
             ) : null}
@@ -693,21 +707,23 @@ export default function App() {
                 onBulkSetParent={handleBulkSetParent}
                 saving={saving}
               />
-            ) : loading ? (
+            ) : loading && products.length === 0 ? (
               <div className="sp-empty">Loading products…</div>
             ) : products.length === 0 ? (
               <div className="sp-empty">No products found.</div>
             ) : (
-              <ProductList
-                products={products}
-                currencySymbol={settings.currencySymbol || '₪'}
-                selectedId={selectedId}
-                selectedIds={selectedIds}
-                onSelect={openProduct}
-                onToggleSelect={toggleSelect}
-                onToggleSelectAll={toggleSelectAll}
-                onQuickUpdate={handleQuickUpdate}
-              />
+              <div className={`sp-list-shell ${loading ? 'is-refreshing' : ''}`}>
+                <ProductList
+                  products={products}
+                  currencySymbol={settings.currencySymbol || '₪'}
+                  selectedId={selectedId}
+                  selectedIds={selectedIds}
+                  onSelect={openProduct}
+                  onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectAll}
+                  onQuickUpdate={handleQuickUpdate}
+                />
+              </div>
             )}
 
             {!showCategoryTree && pages > 1 && (
