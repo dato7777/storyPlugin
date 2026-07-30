@@ -1715,6 +1715,115 @@ body.storyphone-im-panel-open {
   flex-wrap: wrap;
 }
 
+.sp-ctree-card-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex: 0 0 auto;
+  border: 1px solid var(--sp-line);
+  background: #f8fafc;
+}
+
+.sp-ctree-bulk-parent {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px 16px;
+  border-radius: var(--sp-radius-sm);
+  background: linear-gradient(180deg, #f8fbfb, #eef6f5);
+  border: 1px solid rgba(15, 118, 110, 0.18);
+}
+
+.sp-ctree-bulk-parent-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.86rem;
+  color: var(--sp-muted);
+}
+
+.sp-ctree-bulk-parent-copy strong {
+  color: var(--sp-ink);
+  font-size: 0.95rem;
+}
+
+.sp-ctree-bulk-parent label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--sp-muted);
+}
+
+.sp-ctree-bulk-parent select {
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--sp-line);
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--sp-ink);
+}
+
+.sp-ctree-bulk-parent-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sp-cat-icon-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sp-cat-icon-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.sp-cat-icon-preview {
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--sp-line);
+  background: #f8fafc;
+  max-width: 100%;
+}
+
+.sp-cat-icon-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  min-height: 64px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--sp-line);
+  color: var(--sp-muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+  background: #f8fafc;
+}
+
+.sp-cat-icon-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .sp-ctree-bulk-parent {
+    grid-template-columns: 1fr;
+  }
+}
+
 .sp-seg {
   display: inline-flex;
   padding: 3px;

@@ -231,6 +231,16 @@ class StoryPhone_IM_REST_Controller {
 				),
 			)
 		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/categories/bulk',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'bulk_categories' ),
+				'permission_callback' => array( __CLASS__, 'check_permissions' ),
+			)
+		);
 	}
 
 	/**
@@ -1534,6 +1544,154 @@ class StoryPhone_IM_REST_Controller {
 		);
 	}
 
+	/**
+	 * Format a product_cat term for the inventory UI.
+	 *
+	 * @param WP_Term $term Term.
+	 * @return array
+	 */
+	private static function format_category( $term ) {
+		$thumb_id  = absint( get_term_meta( $term->term_id, 'thumbnail_id', true ) );
+		$icon_size = absint( get_term_meta( $term->term_id, 'storyphone_icon_size', true ) );
+		if ( $icon_size < 1 ) {
+			$icon_size = 64;
+		}
+
+		$thumb_url = '';
+		if ( $thumb_id > 0 ) {
+			$thumb_url = wp_get_attachment_image_url( $thumb_id, 'thumbnail' );
+			if ( ! $thumb_url ) {
+				$thumb_url = wp_get_attachment_url( $thumb_id );
+			}
+		}
+
+		return array(
+			'id'            => (int) $term->term_id,
+			'name'          => $term->name,
+			'slug'          => $term->slug,
+			'parent'        => (int) $term->parent,
+			'count'         => (int) $term->count,
+			'thumbnail_id'  => $thumb_id,
+			'thumbnail_url' => $thumb_url ? esc_url_raw( $thumb_url ) : '',
+			'icon_size'     => $icon_size,
+		);
+	}
+
+	/**
+	 * Whether $maybe_descendant is the same as or under $ancestor_id.
+	 *
+	 * @param int $ancestor_id       Ancestor term ID.
+	 * @param int $maybe_descendant  Candidate term ID.
+	 * @return bool
+	 */
+	private static function category_is_ancestor_of( $ancestor_id, $maybe_descendant ) {
+		$ancestor_id      = absint( $ancestor_id );
+		$maybe_descendant = absint( $maybe_descendant );
+		if ( $ancestor_id < 1 || $maybe_descendant < 1 ) {
+			return false;
+		}
+		if ( $ancestor_id === $maybe_descendant ) {
+			return true;
+		}
+
+		$current = $maybe_descendant;
+		$seen    = array();
+		while ( $current > 0 && empty( $seen[ $current ] ) ) {
+			$seen[ $current ] = true;
+			$term             = get_term( $current, 'product_cat' );
+			if ( ! $term || is_wp_error( $term ) ) {
+				break;
+			}
+			$parent = (int) $term->parent;
+			if ( $parent === $ancestor_id ) {
+				return true;
+			}
+			$current = $parent;
+		}
+		return false;
+	}
+
+	/**
+	 * Validate a parent assignment for a category.
+	 *
+	 * @param int $term_id Category ID (0 when creating).
+	 * @param int $parent  Proposed parent ID.
+	 * @return true|WP_Error
+	 */
+	private static function validate_category_parent( $term_id, $parent ) {
+		$term_id = absint( $term_id );
+		$parent  = absint( $parent );
+
+		if ( 0 === $parent ) {
+			return true;
+		}
+
+		$parent_term = get_term( $parent, 'product_cat' );
+		if ( ! $parent_term || is_wp_error( $parent_term ) ) {
+			return new WP_Error(
+				'storyphone_im_category_parent',
+				__( 'Parent category not found.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		if ( $term_id > 0 && $parent === $term_id ) {
+			return new WP_Error(
+				'storyphone_im_category_parent',
+				__( 'A category cannot be its own parent.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Parent cannot be a descendant of this category (would create a cycle).
+		if ( $term_id > 0 && self::category_is_ancestor_of( $term_id, $parent ) ) {
+			return new WP_Error(
+				'storyphone_im_category_parent_cycle',
+				__( 'Cannot set a child category as the parent.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Save category icon (WC thumbnail) and recommended icon size.
+	 *
+	 * @param int   $term_id Term ID.
+	 * @param array $params  Request params.
+	 * @return void
+	 */
+	private static function save_category_icon_meta( $term_id, $params ) {
+		$term_id = absint( $term_id );
+		if ( $term_id < 1 || ! is_array( $params ) ) {
+			return;
+		}
+
+		if ( array_key_exists( 'thumbnail_id', $params ) ) {
+			$thumb_id = absint( $params['thumbnail_id'] );
+			if ( $thumb_id > 0 ) {
+				update_term_meta( $term_id, 'thumbnail_id', $thumb_id );
+			} else {
+				delete_term_meta( $term_id, 'thumbnail_id' );
+			}
+		}
+
+		if ( array_key_exists( 'icon_size', $params ) ) {
+			$size     = absint( $params['icon_size'] );
+			$allowed  = array( 32, 48, 64, 96, 128, 256 );
+			if ( in_array( $size, $allowed, true ) ) {
+				update_term_meta( $term_id, 'storyphone_icon_size', $size );
+			}
+		}
+	}
+
+	/**
+	 * POST /categories — create a product category (or subcategory).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
 	public static function create_category( $request ) {
 		$rate = StoryPhone_IM_Audit_Log::check_rate_limit();
 		if ( is_wp_error( $rate ) ) {
@@ -1554,16 +1712,10 @@ class StoryPhone_IM_REST_Controller {
 			);
 		}
 
-		$parent = isset( $params['parent'] ) ? absint( $params['parent'] ) : 0;
-		if ( $parent > 0 ) {
-			$parent_term = get_term( $parent, 'product_cat' );
-			if ( ! $parent_term || is_wp_error( $parent_term ) ) {
-				return new WP_Error(
-					'storyphone_im_category_parent',
-					__( 'Parent category not found.', 'storyphone-inventory-manager' ),
-					array( 'status' => 400 )
-				);
-			}
+		$parent   = isset( $params['parent'] ) ? absint( $params['parent'] ) : 0;
+		$parent_ok = self::validate_category_parent( 0, $parent );
+		if ( is_wp_error( $parent_ok ) ) {
+			return $parent_ok;
 		}
 
 		$result = wp_insert_term(
@@ -1579,7 +1731,8 @@ class StoryPhone_IM_REST_Controller {
 		}
 
 		$term_id = (int) $result['term_id'];
-		$term    = get_term( $term_id, 'product_cat' );
+		self::save_category_icon_meta( $term_id, $params );
+		$term = get_term( $term_id, 'product_cat' );
 
 		StoryPhone_IM_Audit_Log::log(
 			'create',
@@ -1594,13 +1747,7 @@ class StoryPhone_IM_REST_Controller {
 		return rest_ensure_response(
 			array(
 				'success'  => true,
-				'category' => array(
-					'id'     => (int) $term->term_id,
-					'name'   => $term->name,
-					'slug'   => $term->slug,
-					'parent' => (int) $term->parent,
-					'count'  => (int) $term->count,
-				),
+				'category' => self::format_category( $term ),
 			)
 		);
 	}
@@ -1627,20 +1774,14 @@ class StoryPhone_IM_REST_Controller {
 
 		$categories = array();
 		foreach ( $terms as $term ) {
-			$categories[] = array(
-				'id'     => (int) $term->term_id,
-				'name'   => $term->name,
-				'slug'   => $term->slug,
-				'parent' => (int) $term->parent,
-				'count'  => (int) $term->count,
-			);
+			$categories[] = self::format_category( $term );
 		}
 
 		return rest_ensure_response( array( 'categories' => $categories ) );
 	}
 
 	/**
-	 * POST/PUT /categories/{id} — rename or reparent a product category.
+	 * POST/PUT /categories/{id} — rename, reparent, or update icon for a category.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @return WP_REST_Response|WP_Error
@@ -1666,7 +1807,9 @@ class StoryPhone_IM_REST_Controller {
 			$params = $request->get_params();
 		}
 
-		$args = array();
+		$args    = array();
+		$changed = array();
+
 		if ( isset( $params['name'] ) ) {
 			$name = sanitize_text_field( $params['name'] );
 			if ( '' === $name ) {
@@ -1677,21 +1820,29 @@ class StoryPhone_IM_REST_Controller {
 				);
 			}
 			$args['name'] = $name;
+			$changed[]    = 'name';
 		}
 
 		if ( array_key_exists( 'parent', $params ) ) {
-			$parent = absint( $params['parent'] );
-			if ( $parent === $term_id ) {
-				return new WP_Error(
-					'storyphone_im_category_parent',
-					__( 'A category cannot be its own parent.', 'storyphone-inventory-manager' ),
-					array( 'status' => 400 )
-				);
+			$parent    = absint( $params['parent'] );
+			$parent_ok = self::validate_category_parent( $term_id, $parent );
+			if ( is_wp_error( $parent_ok ) ) {
+				return $parent_ok;
 			}
 			$args['parent'] = $parent;
+			$changed[]      = 'parent';
 		}
 
-		if ( empty( $args ) ) {
+		$meta_keys = array( 'thumbnail_id', 'icon_size' );
+		$has_meta  = false;
+		foreach ( $meta_keys as $key ) {
+			if ( array_key_exists( $key, $params ) ) {
+				$has_meta  = true;
+				$changed[] = $key;
+			}
+		}
+
+		if ( empty( $args ) && ! $has_meta ) {
 			return new WP_Error(
 				'storyphone_im_category_empty',
 				__( 'Nothing to update.', 'storyphone-inventory-manager' ),
@@ -1699,9 +1850,15 @@ class StoryPhone_IM_REST_Controller {
 			);
 		}
 
-		$result = wp_update_term( $term_id, 'product_cat', $args );
-		if ( is_wp_error( $result ) ) {
-			return $result;
+		if ( ! empty( $args ) ) {
+			$result = wp_update_term( $term_id, 'product_cat', $args );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+		}
+
+		if ( $has_meta ) {
+			self::save_category_icon_meta( $term_id, $params );
 		}
 
 		$updated = get_term( $term_id, 'product_cat' );
@@ -1710,20 +1867,103 @@ class StoryPhone_IM_REST_Controller {
 			0,
 			array(
 				'category_id' => (string) $term_id,
-				'fields'      => implode( ',', array_keys( $args ) ),
+				'fields'      => implode( ',', $changed ),
 			)
 		);
 
 		return rest_ensure_response(
 			array(
 				'success'  => true,
-				'category' => array(
-					'id'     => (int) $updated->term_id,
-					'name'   => $updated->name,
-					'slug'   => $updated->slug,
-					'parent' => (int) $updated->parent,
-					'count'  => (int) $updated->count,
-				),
+				'category' => self::format_category( $updated ),
+			)
+		);
+	}
+
+	/**
+	 * POST /categories/bulk — bulk set parent for categories.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function bulk_categories( $request ) {
+		$rate = StoryPhone_IM_Audit_Log::check_rate_limit();
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) ) {
+			$params = $request->get_params();
+		}
+
+		$action = isset( $params['action'] ) ? sanitize_key( $params['action'] ) : '';
+		$ids    = isset( $params['ids'] ) && is_array( $params['ids'] )
+			? array_values( array_filter( array_map( 'absint', $params['ids'] ) ) )
+			: array();
+
+		if ( 'set_parent' !== $action || empty( $ids ) ) {
+			return new WP_Error(
+				'storyphone_im_bulk_category_invalid',
+				__( 'Provide category ids and action set_parent.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		if ( count( $ids ) > 50 ) {
+			return new WP_Error(
+				'storyphone_im_bulk_too_many',
+				__( 'You can update at most 50 categories at once.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$parent    = isset( $params['parent'] ) ? absint( $params['parent'] ) : 0;
+		$updated   = 0;
+		$skipped   = 0;
+
+		foreach ( $ids as $term_id ) {
+			if ( $parent > 0 && $parent === $term_id ) {
+				++$skipped;
+				continue;
+			}
+
+			$term = get_term( $term_id, 'product_cat' );
+			if ( ! $term || is_wp_error( $term ) ) {
+				++$skipped;
+				continue;
+			}
+
+			$parent_ok = self::validate_category_parent( $term_id, $parent );
+			if ( is_wp_error( $parent_ok ) ) {
+				++$skipped;
+				continue;
+			}
+
+			$result = wp_update_term( $term_id, 'product_cat', array( 'parent' => $parent ) );
+			if ( is_wp_error( $result ) ) {
+				++$skipped;
+				continue;
+			}
+
+			++$updated;
+			StoryPhone_IM_Audit_Log::log(
+				'update',
+				0,
+				array(
+					'category_id' => (string) $term_id,
+					'bulk'        => 'set_parent',
+					'parent'      => (string) $parent,
+				)
+			);
+		}
+
+		return rest_ensure_response(
+			array(
+				'success' => true,
+				'updated' => $updated,
+				'skipped' => $skipped,
+				'action'  => 'set_parent',
+				'parent'  => $parent,
 			)
 		);
 	}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  bulkCategories,
   bulkProducts,
   createCategory,
   createProduct,
@@ -12,10 +13,15 @@ import {
   trashProduct,
   updateCategory,
   updateProduct,
+  uploadMedia,
   uploadProductImage,
   deleteProductImage,
 } from './api.js';
-import { flattenCategoriesForSelect } from './categories.js';
+import {
+  CATEGORY_ICON_SIZES,
+  flattenCategoriesForSelect,
+  getParentOptionsForCategory,
+} from './categories.js';
 import BulkBar from './components/BulkBar.jsx';
 import CategoryNav from './components/CategoryNav.jsx';
 import CategoryTreeView from './components/CategoryTreeView.jsx';
@@ -72,12 +78,16 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [confirmTrash, setConfirmTrash] = useState(null);
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
-  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategoryForm, setEditCategoryForm] = useState(null);
   const [confirmDeleteCategory, setConfirmDeleteCategory] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
   const [createCategoryForm, setCreateCategoryForm] = useState({
     name: '',
     parent: 0,
+    icon_size: 64,
+    iconFile: null,
+    thumbnail_id: 0,
+    thumbnail_url: '',
   });
 
   const showToast = useCallback((message, type = 'success') => {
@@ -89,6 +99,19 @@ export default function App() {
   const activeCategory = useMemo(
     () => (category ? categories.find((c) => c.id === category) || null : null),
     [categories, category]
+  );
+
+  const editParentOptions = useMemo(
+    () =>
+      editCategoryForm?.id
+        ? getParentOptionsForCategory(categories, editCategoryForm.id)
+        : categoryOptions,
+    [categories, editCategoryForm, categoryOptions]
+  );
+
+  const createParentOptions = useMemo(
+    () => getParentOptionsForCategory(categories, 0),
+    [categories]
   );
 
   const showCategoryTree = collection === 'categories' && !category;
@@ -421,28 +444,73 @@ export default function App() {
     }
   }
 
-  function openEditCategory() {
-    if (!activeCategory) return;
-    setEditCategoryName(activeCategory.name);
+  function openEditCategory(cat = activeCategory) {
+    if (!cat) return;
+    // Prefer fresh list data (includes icon fields) when opening from the tree card.
+    const fresh = categories.find((c) => c.id === cat.id) || cat;
+    setEditCategoryForm({
+      id: fresh.id,
+      name: fresh.name || '',
+      parent: Number(fresh.parent) || 0,
+      thumbnail_id: fresh.thumbnail_id || 0,
+      thumbnail_url: fresh.thumbnail_url || '',
+      icon_size: fresh.icon_size || 64,
+      iconFile: null,
+      previewUrl: '',
+      clearIcon: false,
+    });
     setEditCategoryOpen(true);
   }
 
   async function handleCategorySave(e) {
     e.preventDefault();
-    if (!activeCategory) return;
-    const name = editCategoryName.trim();
+    if (!editCategoryForm?.id) return;
+    const name = editCategoryForm.name.trim();
     if (!name) {
       showToast('Category name is required', 'error');
       return;
     }
     setSaving(true);
     try {
-      await updateCategory(activeCategory.id, { name });
+      let thumbnailId = editCategoryForm.thumbnail_id || 0;
+      if (editCategoryForm.iconFile) {
+        const uploaded = await uploadMedia(editCategoryForm.iconFile);
+        thumbnailId = uploaded.id || 0;
+      } else if (editCategoryForm.clearIcon) {
+        thumbnailId = 0;
+      }
+
+      await updateCategory(editCategoryForm.id, {
+        name,
+        parent: editCategoryForm.parent || 0,
+        thumbnail_id: thumbnailId,
+        icon_size: editCategoryForm.icon_size || 64,
+      });
       showToast('Category updated');
       setEditCategoryOpen(false);
+      setEditCategoryForm(null);
       await loadCategories();
     } catch (err) {
       showToast(err.message || 'Could not update category', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleBulkSetParent(ids, parent) {
+    setSaving(true);
+    try {
+      const result = await bulkCategories(ids, 'set_parent', { parent: parent || 0 });
+      const updated = result.updated || 0;
+      const skipped = result.skipped || 0;
+      showToast(
+        skipped
+          ? `Updated parent for ${updated} · skipped ${skipped}`
+          : `Updated parent for ${updated} categor${updated === 1 ? 'y' : 'ies'}`
+      );
+      await loadCategories();
+    } catch (err) {
+      showToast(err.message || 'Could not set parent', 'error');
     } finally {
       setSaving(false);
     }
@@ -466,7 +534,14 @@ export default function App() {
   }
 
   function openCreateCategory({ parentId = 0 } = {}) {
-    setCreateCategoryForm({ name: '', parent: parentId || 0 });
+    setCreateCategoryForm({
+      name: '',
+      parent: parentId || 0,
+      icon_size: 64,
+      iconFile: null,
+      thumbnail_id: 0,
+      thumbnail_url: '',
+    });
     setCreateCategoryOpen(true);
   }
 
@@ -479,41 +554,32 @@ export default function App() {
     }
     setSaving(true);
     try {
+      let thumbnailId = 0;
+      if (createCategoryForm.iconFile) {
+        const uploaded = await uploadMedia(createCategoryForm.iconFile);
+        thumbnailId = uploaded.id || 0;
+      }
       await createCategory({
         name,
         parent: createCategoryForm.parent || 0,
+        thumbnail_id: thumbnailId,
+        icon_size: createCategoryForm.icon_size || 64,
       });
       showToast(
         createCategoryForm.parent ? 'Subcategory created' : 'Category created'
       );
       setCreateCategoryOpen(false);
-      setCreateCategoryForm({ name: '', parent: 0 });
+      setCreateCategoryForm({
+        name: '',
+        parent: 0,
+        icon_size: 64,
+        iconFile: null,
+        thumbnail_id: 0,
+        thumbnail_url: '',
+      });
       await loadCategories();
     } catch (err) {
       showToast(err.message || 'Could not create category', 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDeleteEmptyCategories(ids) {
-    setSaving(true);
-    let deleted = 0;
-    try {
-      for (const id of ids) {
-        await deleteCategory(id);
-        deleted += 1;
-      }
-      showToast(`Deleted ${deleted} categor${deleted === 1 ? 'y' : 'ies'}`);
-      await loadCategories();
-    } catch (err) {
-      showToast(
-        deleted
-          ? `Deleted ${deleted}, then failed: ${err.message}`
-          : err.message || 'Could not delete categories',
-        'error'
-      );
-      await loadCategories();
     } finally {
       setSaving(false);
     }
@@ -560,7 +626,7 @@ export default function App() {
                     <button
                       type="button"
                       className="sp-btn sp-btn-soft sp-btn-sm"
-                      onClick={openEditCategory}
+                      onClick={() => openEditCategory()}
                     >
                       Edit
                     </button>
@@ -623,7 +689,8 @@ export default function App() {
                 categories={categories}
                 onOpenCategory={selectCategory}
                 onCreateCategory={openCreateCategory}
-                onDeleteCategories={handleDeleteEmptyCategories}
+                onEditCategory={openEditCategory}
+                onBulkSetParent={handleBulkSetParent}
                 saving={saving}
               />
             ) : loading ? (
@@ -881,7 +948,7 @@ export default function App() {
             onClick={() => !saving && setCreateCategoryOpen(false)}
           >
             <div
-              className="sp-modal sp-modal-sm"
+              className="sp-modal sp-modal-lg"
               role="dialog"
               aria-modal="true"
               aria-labelledby="sp-create-cat-title"
@@ -915,15 +982,47 @@ export default function App() {
                     }
                   >
                     <option value="">None (top-level category)</option>
-                    {categoryOptions.map((cat) => (
+                    {createParentOptions.map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.label}
                       </option>
                     ))}
                   </select>
                 </label>
+                <label>
+                  Category icon
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    onChange={(e) =>
+                      setCreateCategoryForm((f) => ({
+                        ...f,
+                        iconFile: e.target.files?.[0] || null,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Icon size (recommended)
+                  <select
+                    value={createCategoryForm.icon_size || 64}
+                    onChange={(e) =>
+                      setCreateCategoryForm((f) => ({
+                        ...f,
+                        icon_size: Number(e.target.value) || 64,
+                      }))
+                    }
+                  >
+                    {CATEGORY_ICON_SIZES.map((size) => (
+                      <option key={size} value={size}>
+                        {size}×{size}px
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <p className="sp-help">
-                  Choose a parent to create a subcategory under an existing category.
+                  Choose a parent to nest under an existing category. Icon size is stored for
+                  themes that support it (64×64 is a solid default).
                 </p>
                 <div className="sp-modal-actions">
                   <button
@@ -945,13 +1044,14 @@ export default function App() {
         )}
 
       {editCategoryOpen &&
+        editCategoryForm &&
         createPortal(
           <div
             className="sp-modal-backdrop"
             onClick={() => !saving && setEditCategoryOpen(false)}
           >
             <div
-              className="sp-modal sp-modal-sm"
+              className="sp-modal sp-modal-lg"
               role="dialog"
               aria-modal="true"
               onClick={(e) => e.stopPropagation()}
@@ -962,17 +1062,127 @@ export default function App() {
                   Name
                   <input
                     required
-                    value={editCategoryName}
-                    onChange={(e) => setEditCategoryName(e.target.value)}
+                    value={editCategoryForm.name}
+                    onChange={(e) =>
+                      setEditCategoryForm((f) => ({ ...f, name: e.target.value }))
+                    }
                     autoFocus
                   />
                 </label>
+                <label>
+                  Parent category
+                  <select
+                    value={editCategoryForm.parent || ''}
+                    onChange={(e) =>
+                      setEditCategoryForm((f) => ({
+                        ...f,
+                        parent: e.target.value ? Number(e.target.value) : 0,
+                      }))
+                    }
+                  >
+                    <option value="">None (top-level category)</option>
+                    {editParentOptions.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="sp-help">
+                  Set a parent to make this a subcategory, or choose None to make it top-level.
+                </p>
+
+                <div className="sp-cat-icon-field">
+                  <span className="sp-label">Category icon</span>
+                  <div className="sp-cat-icon-preview-row">
+                    {editCategoryForm.previewUrl ||
+                    (editCategoryForm.thumbnail_url && !editCategoryForm.clearIcon) ? (
+                      <img
+                        className="sp-cat-icon-preview"
+                        src={
+                          editCategoryForm.previewUrl || editCategoryForm.thumbnail_url
+                        }
+                        alt=""
+                        style={{
+                          width: editCategoryForm.icon_size || 64,
+                          height: editCategoryForm.icon_size || 64,
+                        }}
+                      />
+                    ) : (
+                      <span className="sp-cat-icon-placeholder">No icon</span>
+                    )}
+                    <div className="sp-cat-icon-actions">
+                      <label className="sp-btn sp-btn-soft sp-btn-sm">
+                        Upload icon
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/gif,image/webp"
+                          hidden
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            setEditCategoryForm((f) => ({
+                              ...f,
+                              iconFile: file,
+                              clearIcon: false,
+                              previewUrl: file ? URL.createObjectURL(file) : '',
+                            }));
+                          }}
+                        />
+                      </label>
+                      {(editCategoryForm.thumbnail_url || editCategoryForm.iconFile) &&
+                      !editCategoryForm.clearIcon ? (
+                        <button
+                          type="button"
+                          className="sp-btn sp-btn-ghost sp-btn-sm"
+                          onClick={() =>
+                            setEditCategoryForm((f) => ({
+                              ...f,
+                              iconFile: null,
+                              clearIcon: true,
+                              thumbnail_url: '',
+                              previewUrl: '',
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <label>
+                  Icon size (recommended)
+                  <select
+                    value={editCategoryForm.icon_size || 64}
+                    onChange={(e) =>
+                      setEditCategoryForm((f) => ({
+                        ...f,
+                        icon_size: Number(e.target.value) || 64,
+                      }))
+                    }
+                  >
+                    {CATEGORY_ICON_SIZES.map((size) => (
+                      <option key={size} value={size}>
+                        {size}×{size}px — best for{' '}
+                        {size <= 48 ? 'menus' : size <= 96 ? 'grids' : 'hero / banners'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="sp-help">
+                  Square PNG/WebP works best. Size is saved as guidance for the storefront theme.
+                </p>
+
                 <div className="sp-modal-actions">
                   <button
                     type="button"
                     className="sp-btn sp-btn-ghost"
                     disabled={saving}
-                    onClick={() => setEditCategoryOpen(false)}
+                    onClick={() => {
+                      setEditCategoryOpen(false);
+                      setEditCategoryForm(null);
+                    }}
                   >
                     Cancel
                   </button>

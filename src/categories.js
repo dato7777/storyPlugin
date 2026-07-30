@@ -205,3 +205,47 @@ export function flattenCategoriesForSelect(categories) {
   walk(tree, 0);
   return out;
 }
+
+/**
+ * All descendant category IDs under a root (not including root).
+ *
+ * @param {Array<{id:number,parent:number}>} categories
+ * @param {number} rootId
+ * @returns {number[]}
+ */
+export function getDescendantIds(categories, rootId) {
+  const result = [];
+  const pid = Number(rootId) || 0;
+  if (!pid) return result;
+
+  function walk(parentId) {
+    (categories || [])
+      .filter((c) => Number(c.parent) === parentId)
+      .forEach((c) => {
+        result.push(c.id);
+        walk(c.id);
+      });
+  }
+
+  walk(pid);
+  return result;
+}
+
+/**
+ * Parent <select> options for a category, excluding itself and its descendants.
+ *
+ * @param {Array} categories
+ * @param {number} categoryId Category being edited (0 for create / bulk).
+ * @param {number[]} [extraBlocked] Extra IDs to exclude (e.g. bulk-selected).
+ */
+export function getParentOptionsForCategory(categories, categoryId = 0, extraBlocked = []) {
+  const blocked = new Set(
+    [Number(categoryId) || 0, ...(extraBlocked || []).map(Number)].filter(Boolean)
+  );
+  if (categoryId) {
+    getDescendantIds(categories, categoryId).forEach((id) => blocked.add(id));
+  }
+  return flattenCategoriesForSelect(categories).filter((c) => !blocked.has(c.id));
+}
+
+export const CATEGORY_ICON_SIZES = [32, 48, 64, 96, 128, 256];

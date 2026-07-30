@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { buildCategoryTreeForExplorer } from '../categories.js';
+import { buildCategoryTreeForExplorer, getParentOptionsForCategory } from '../categories.js';
 
 function TreeNode({
   node,
@@ -9,6 +9,7 @@ function TreeNode({
   onToggle,
   onOpen,
   onToggleSelect,
+  onEditCategory,
   onAddSubcategory,
 }) {
   const hasChildren = node.children?.length > 0;
@@ -16,8 +17,8 @@ function TreeNode({
   const direct = node.itemCount || 0;
   const total = node.totalItems || 0;
   const isEmpty = direct < 1;
-  const canSelect = isEmpty && !hasChildren;
   const checked = selectedIds.has(node.id);
+  const thumb = node.thumbnail_url || '';
 
   return (
     <div
@@ -25,22 +26,18 @@ function TreeNode({
       style={{ '--sp-ctree-depth': depth }}
     >
       <div className="sp-ctree-row">
-        {canSelect ? (
-          <label
-            className={`sp-check sp-ctree-check ${checked ? 'is-checked' : ''}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={() => onToggleSelect(node.id)}
-              aria-label={`Select empty category ${node.name}`}
-            />
-            <span className="sp-check-box" aria-hidden="true" />
-          </label>
-        ) : (
-          <span className="sp-ctree-check-spacer" aria-hidden="true" />
-        )}
+        <label
+          className={`sp-check sp-ctree-check ${checked ? 'is-checked' : ''}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={() => onToggleSelect(node.id)}
+            aria-label={`Select category ${node.name}`}
+          />
+          <span className="sp-check-box" aria-hidden="true" />
+        </label>
 
         {hasChildren ? (
           <button
@@ -61,7 +58,11 @@ function TreeNode({
           className={`sp-ctree-card ${isEmpty ? 'is-empty-card' : ''}`}
           onClick={() => onOpen(node.id)}
         >
-          <span className="sp-ctree-card-mark" aria-hidden="true" />
+          {thumb ? (
+            <img className="sp-ctree-card-thumb" src={thumb} alt="" />
+          ) : (
+            <span className="sp-ctree-card-mark" aria-hidden="true" />
+          )}
           <span className="sp-ctree-card-body">
             <span className="sp-ctree-card-name">
               {node.name}
@@ -79,6 +80,17 @@ function TreeNode({
           </span>
         </button>
 
+        <button
+          type="button"
+          className="sp-btn sp-btn-soft sp-btn-sm"
+          title={`Edit ${node.name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditCategory(node);
+          }}
+        >
+          Edit
+        </button>
         <button
           type="button"
           className="sp-btn sp-btn-soft sp-btn-sm sp-ctree-add-sub"
@@ -104,6 +116,7 @@ function TreeNode({
               onToggle={onToggle}
               onOpen={onOpen}
               onToggleSelect={onToggleSelect}
+              onEditCategory={onEditCategory}
               onAddSubcategory={onAddSubcategory}
             />
           ))}
@@ -123,13 +136,10 @@ function collectExpandableIds(nodes, into = []) {
   return into;
 }
 
-function collectSelectableIds(nodes, into = []) {
+function collectAllIds(nodes, into = []) {
   nodes.forEach((node) => {
-    const hasChildren = node.children?.length > 0;
-    if ((node.itemCount || 0) < 1 && !hasChildren) {
-      into.push(node.id);
-    }
-    if (hasChildren) collectSelectableIds(node.children, into);
+    into.push(node.id);
+    if (node.children?.length) collectAllIds(node.children, into);
   });
   return into;
 }
@@ -138,27 +148,35 @@ export default function CategoryTreeView({
   categories,
   onOpenCategory,
   onCreateCategory,
-  onDeleteCategories,
+  onEditCategory,
+  onBulkSetParent,
   saving = false,
 }) {
-  // Default to All Categories (includes empty) when opening from the sidebar.
   const [scope, setScope] = useState('all'); // 'active' | 'all'
   const includeEmpty = scope === 'all';
   const [expandMode, setExpandMode] = useState('expand');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkParentOpen, setBulkParentOpen] = useState(false);
+  const [bulkParentId, setBulkParentId] = useState(0);
 
   const tree = useMemo(
     () => buildCategoryTreeForExplorer(categories, includeEmpty),
     [categories, includeEmpty]
   );
   const expandableIds = useMemo(() => collectExpandableIds(tree), [tree]);
-  const selectableIds = useMemo(() => collectSelectableIds(tree), [tree]);
+  const allVisibleIds = useMemo(() => collectAllIds(tree), [tree]);
   const [expanded, setExpanded] = useState(() => new Set());
+
+  const parentOptions = useMemo(
+    () => getParentOptionsForCategory(categories, 0, Array.from(selectedIds)),
+    [categories, selectedIds]
+  );
 
   useEffect(() => {
     setExpanded(new Set(tree.map((n) => n.id)));
     setExpandMode('expand');
     setSelectedIds(new Set());
+    setBulkParentOpen(false);
   }, [tree]);
 
   function toggle(id) {
@@ -189,15 +207,14 @@ export default function CategoryTreeView({
     });
   }
 
-  async function handleBulkDelete() {
+  async function handleBulkSetParent(e) {
+    e.preventDefault();
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
-    const ok = window.confirm(
-      `Delete ${ids.length} empty categor${ids.length === 1 ? 'y' : 'ies'}? This cannot be undone.`
-    );
-    if (!ok) return;
-    await onDeleteCategories(ids);
+    await onBulkSetParent(ids, bulkParentId || 0);
     setSelectedIds(new Set());
+    setBulkParentOpen(false);
+    setBulkParentId(0);
   }
 
   const withItems = categories.filter((c) => (Number(c.count) || 0) > 0).length;
@@ -267,7 +284,7 @@ export default function CategoryTreeView({
       {selectedIds.size > 0 ? (
         <div className="sp-ctree-bulk">
           <span>
-            <strong>{selectedIds.size}</strong> empty categor
+            <strong>{selectedIds.size}</strong> categor
             {selectedIds.size === 1 ? 'y' : 'ies'} selected
           </span>
           <div className="sp-ctree-bulk-actions">
@@ -275,20 +292,62 @@ export default function CategoryTreeView({
               type="button"
               className="sp-btn sp-btn-ghost sp-btn-sm"
               disabled={saving}
-              onClick={() => setSelectedIds(new Set())}
+              onClick={() => {
+                setSelectedIds(new Set());
+                setBulkParentOpen(false);
+              }}
             >
               Clear
             </button>
             <button
               type="button"
-              className="sp-btn sp-btn-danger sp-btn-sm"
+              className="sp-btn sp-btn-primary sp-btn-sm"
               disabled={saving}
-              onClick={handleBulkDelete}
+              onClick={() => {
+                setBulkParentId(0);
+                setBulkParentOpen(true);
+              }}
             >
-              {saving ? 'Deleting…' : 'Delete selected'}
+              Set parent…
             </button>
           </div>
         </div>
+      ) : null}
+
+      {bulkParentOpen && selectedIds.size > 0 ? (
+        <form className="sp-ctree-bulk-parent" onSubmit={handleBulkSetParent}>
+          <div className="sp-ctree-bulk-parent-copy">
+            <strong>Set parent category</strong>
+            <span>Applies to {selectedIds.size} selected categor{selectedIds.size === 1 ? 'y' : 'ies'}.</span>
+          </div>
+          <label>
+            Parent
+            <select
+              value={bulkParentId || ''}
+              onChange={(e) => setBulkParentId(e.target.value ? Number(e.target.value) : 0)}
+            >
+              <option value="">None (make top-level)</option>
+              {parentOptions.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="sp-ctree-bulk-parent-actions">
+            <button
+              type="button"
+              className="sp-btn sp-btn-ghost sp-btn-sm"
+              disabled={saving}
+              onClick={() => setBulkParentOpen(false)}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="sp-btn sp-btn-primary sp-btn-sm" disabled={saving}>
+              {saving ? 'Saving…' : 'Apply parent'}
+            </button>
+          </div>
+        </form>
       ) : null}
 
       {tree.length === 0 ? (
@@ -299,11 +358,11 @@ export default function CategoryTreeView({
         </div>
       ) : (
         <div className="sp-ctree-canvas" role="tree" aria-label="Category structure">
-          {includeEmpty && selectableIds.length > 0 ? (
-            <p className="sp-ctree-select-hint">
-              Empty categories show a checkbox so you can delete them quickly.
-            </p>
-          ) : null}
+          <p className="sp-ctree-select-hint">
+            Select any categories to bulk-set a parent. Use Edit for name, parent, and icon. Delete
+            stays single-category only.
+            {allVisibleIds.length > 0 ? ` · ${allVisibleIds.length} shown` : ''}
+          </p>
           {tree.map((node) => (
             <TreeNode
               key={node.id}
@@ -314,6 +373,7 @@ export default function CategoryTreeView({
               onToggle={toggle}
               onOpen={onOpenCategory}
               onToggleSelect={toggleSelect}
+              onEditCategory={onEditCategory}
               onAddSubcategory={(parent) =>
                 onCreateCategory({ parentId: parent.id, parentName: parent.name })
               }

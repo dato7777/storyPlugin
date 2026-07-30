@@ -209,6 +209,17 @@ export function updateCategory(id, payload) {
   });
 }
 
+export function bulkCategories(ids, action, extra = {}) {
+  return request('categories/bulk', {
+    method: 'POST',
+    body: JSON.stringify({
+      ids,
+      action,
+      ...extra,
+    }),
+  });
+}
+
 export function deleteCategory(id) {
   return request(`categories/${absInt(id)}`, {
     method: 'DELETE',
