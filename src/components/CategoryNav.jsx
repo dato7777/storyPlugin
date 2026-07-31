@@ -135,6 +135,8 @@ export default function CategoryNav({
   selectedCategoryId,
   collection,
   stats,
+  workspace = 'inventory',
+  onWorkspaceChange,
   onSelectCategory,
   onSelectCollection,
 }) {
@@ -200,47 +202,85 @@ export default function CategoryNav({
       <div className="sp-nav-inner">
         <div className="sp-nav-brand">
           <span className="sp-nav-brand-mark" aria-hidden="true" />
-          <h1 className="sp-nav-title">Inventory</h1>
+          <h1 className="sp-nav-title">
+            {workspace === 'design' ? 'Design' : 'Inventory'}
+          </h1>
         </div>
 
-        <section className="sp-nav-section">
-          <h2 className="sp-nav-section-title">Collections</h2>
-          <div className="sp-nav-collections">
-            {COLLECTIONS.map((item) => {
-              const Icon = item.Icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`sp-nav-collection ${isActive(item.id) ? 'is-active' : ''}`}
-                  onClick={() => onSelectCollection(item.id)}
-                >
-                  <span className="sp-nav-collection-icon" aria-hidden="true">
-                    <Icon />
-                  </span>
-                  <span className="sp-nav-collection-label">{item.label}</span>
-                  <span className="sp-nav-item-count">{countFor(item.id)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+        <div
+          className={`sp-workspace-toggle mode-${workspace}`}
+          role="group"
+          aria-label="Workspace"
+        >
+          <span className="sp-workspace-toggle-thumb" aria-hidden="true" />
+          <button
+            type="button"
+            className={`sp-workspace-toggle-btn ${workspace === 'inventory' ? 'is-active' : ''}`}
+            aria-pressed={workspace === 'inventory'}
+            onClick={() => onWorkspaceChange?.('inventory')}
+          >
+            Inventory
+          </button>
+          <button
+            type="button"
+            className={`sp-workspace-toggle-btn ${workspace === 'design' ? 'is-active' : ''}`}
+            aria-pressed={workspace === 'design'}
+            onClick={() => onWorkspaceChange?.('design')}
+          >
+            Design
+          </button>
+        </div>
 
-        <section className="sp-nav-section">
-          <h2 className="sp-nav-section-title">Categories</h2>
-          {tree.length === 0 ? (
-            <p className="sp-nav-empty">No categories yet</p>
-          ) : (
-            <CategoryBranch
-              nodes={tree}
-              depth={0}
-              selectedId={selectedCategoryId}
-              expanded={expanded}
-              onToggle={toggle}
-              onSelect={onSelectCategory}
-            />
-          )}
-        </section>
+        {workspace === 'design' ? (
+          <section className="sp-nav-section">
+            <h2 className="sp-nav-section-title">Studio</h2>
+            <p className="sp-nav-studio-hint">
+              Edit website pages on the right — navbar, sections, and more. Top to bottom, easy
+              saves.
+            </p>
+          </section>
+        ) : (
+          <>
+            <section className="sp-nav-section">
+              <h2 className="sp-nav-section-title">Collections</h2>
+              <div className="sp-nav-collections">
+                {COLLECTIONS.map((item) => {
+                  const Icon = item.Icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`sp-nav-collection ${isActive(item.id) ? 'is-active' : ''}`}
+                      onClick={() => onSelectCollection(item.id)}
+                    >
+                      <span className="sp-nav-collection-icon" aria-hidden="true">
+                        <Icon />
+                      </span>
+                      <span className="sp-nav-collection-label">{item.label}</span>
+                      <span className="sp-nav-item-count">{countFor(item.id)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="sp-nav-section">
+              <h2 className="sp-nav-section-title">Categories</h2>
+              {tree.length === 0 ? (
+                <p className="sp-nav-empty">No categories yet</p>
+              ) : (
+                <CategoryBranch
+                  nodes={tree}
+                  depth={0}
+                  selectedId={selectedCategoryId}
+                  expanded={expanded}
+                  onToggle={toggle}
+                  onSelect={onSelectCategory}
+                />
+              )}
+            </section>
+          </>
+        )}
       </div>
     </aside>
   );

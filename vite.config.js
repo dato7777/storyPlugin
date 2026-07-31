@@ -11,9 +11,15 @@ export default defineConfig({
     outDir: 'build',
     emptyOutDir: true,
     manifest: false,
+    cssCodeSplit: false,
     rollupOptions: {
       input: path.resolve(__dirname, 'src/main.jsx'),
       output: {
+        // Classic WP admin script: keep locals inside an IIFE so minified
+        // names like `i` / `v` cannot be overwritten by other plugins.
+        format: 'iife',
+        name: 'StoryPhoneInventoryManager',
+        inlineDynamicImports: true,
         entryFileNames: 'main.js',
         assetFileNames: (assetInfo) => {
           if (assetInfo.name && assetInfo.name.endsWith('.css')) {
@@ -21,7 +27,6 @@ export default defineConfig({
           }
           return 'assets/[name][extname]';
         },
-        chunkFileNames: 'chunks/[name].js',
       },
     },
   },

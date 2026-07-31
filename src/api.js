@@ -226,6 +226,21 @@ export function deleteCategory(id) {
   });
 }
 
+export function fetchDesignPages() {
+  return request('design/pages');
+}
+
+export function fetchDesignPage(key) {
+  return request(`design/page/${encodeURIComponent(key)}`);
+}
+
+export function saveDesignPage(key, payload) {
+  return request(`design/page/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 function absInt(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;

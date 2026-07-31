@@ -25,6 +25,7 @@ import {
 import BulkBar from './components/BulkBar.jsx';
 import CategoryNav from './components/CategoryNav.jsx';
 import CategoryTreeView from './components/CategoryTreeView.jsx';
+import DesignStudio from './components/DesignStudio.jsx';
 import { IconSearch } from './components/NavIcons.jsx';
 import ProductList from './components/ProductList.jsx';
 import ProductEditPanel from './components/ProductEditPanel.jsx';
@@ -68,6 +69,7 @@ export default function App() {
   const [searchInput, setSearchInput] = useState('');
   const [category, setCategory] = useState(0);
   const [collection, setCollection] = useState('all');
+  const [workspace, setWorkspace] = useState('inventory'); // inventory | design
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
@@ -115,7 +117,9 @@ export default function App() {
     [categories]
   );
 
-  const showCategoryTree = collection === 'categories' && !category;
+  const showCategoryTree = workspace === 'inventory' && collection === 'categories' && !category;
+  // Product list pages only (not the All Categories tree).
+  const showProductToolbar = workspace === 'inventory' && !showCategoryTree;
 
   const headerTitle = activeCategory?.name || COLLECTION_TITLES[collection] || 'All items';
 
@@ -604,11 +608,19 @@ export default function App() {
           selectedCategoryId={category}
           collection={collection}
           stats={stats}
+          workspace={workspace}
+          onWorkspaceChange={setWorkspace}
           onSelectCategory={selectCategory}
           onSelectCollection={selectCollection}
         />
 
         <section className="sp-content">
+          {workspace === 'design' ? (
+            <main className="sp-main">
+              <DesignStudio showToast={showToast} />
+            </main>
+          ) : (
+            <>
           <header className="sp-content-header">
             <div className="sp-content-heading">
               {showCategoryBack ? (
@@ -652,19 +664,21 @@ export default function App() {
                 </div>
               ) : null}
             </div>
-            {!showCategoryTree ? (
+            {showProductToolbar ? (
               <div className="sp-content-actions">
                 <div className="sp-search-wrap">
                   <span className="sp-search-icon" aria-hidden="true">
                     <IconSearch />
                   </span>
                   <input
-                    type="search"
+                    type="text"
                     className="sp-search"
                     placeholder={`Search ${headerTitle}…`}
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     aria-label="Search products"
+                    autoComplete="off"
+                    spellCheck={false}
                   />
                   {searchInput ? (
                     <button
@@ -673,27 +687,31 @@ export default function App() {
                       aria-label="Clear search"
                       onClick={() => setSearchInput('')}
                     >
-                      ×
+                      <span aria-hidden="true">✕</span>
                     </button>
                   ) : null}
                 </div>
+              </div>
+            ) : null}
+          </header>
+
+          {showProductToolbar ? (
+            <div className="sp-product-toolbar">
+              <div className="sp-content-meta sp-content-meta-inline">
+                <span>{loading ? 'Loading…' : `${total} item${total === 1 ? '' : 's'}`}</span>
+              </div>
+              <div className="sp-product-toolbar-actions">
                 <button
                   type="button"
-                  className="sp-btn sp-btn-primary sp-btn-create"
+                  className="sp-btn sp-btn-primary sp-btn-create-cat"
                   onClick={() => setCreateOpen(true)}
                 >
-                  <span className="sp-btn-create-plus" aria-hidden="true">
+                  <span className="sp-btn-create-cat-plus" aria-hidden="true">
                     +
                   </span>
                   Create item
                 </button>
               </div>
-            ) : null}
-          </header>
-
-          {!showCategoryTree ? (
-            <div className="sp-content-meta">
-              <span>{loading ? 'Loading…' : `${total} item${total === 1 ? '' : 's'}`}</span>
             </div>
           ) : null}
 
@@ -750,10 +768,12 @@ export default function App() {
               </div>
             )}
           </main>
+            </>
+          )}
         </section>
       </div>
 
-      {!showCategoryTree ? (
+      {workspace === 'inventory' && !showCategoryTree ? (
         <BulkBar
           count={selectedIds.size}
           saving={saving}
