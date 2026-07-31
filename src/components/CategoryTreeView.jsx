@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { buildCategoryTreeForExplorer, getParentOptionsForCategory } from '../categories.js';
+import CategoryBulkBar from './CategoryBulkBar.jsx';
 
 function TreeNode({
   node,
@@ -150,6 +152,7 @@ export default function CategoryTreeView({
   onCreateCategory,
   onEditCategory,
   onBulkSetParent,
+  onBulkDelete,
   saving = false,
 }) {
   const [scope, setScope] = useState('all'); // 'active' | 'all'
@@ -158,6 +161,7 @@ export default function CategoryTreeView({
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkParentOpen, setBulkParentOpen] = useState(false);
   const [bulkParentId, setBulkParentId] = useState(0);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   const tree = useMemo(
     () => buildCategoryTreeForExplorer(categories, includeEmpty),
@@ -215,6 +219,15 @@ export default function CategoryTreeView({
     setSelectedIds(new Set());
     setBulkParentOpen(false);
     setBulkParentId(0);
+  }
+
+  async function handleBulkDeleteConfirm() {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    await onBulkDelete?.(ids);
+    setSelectedIds(new Set());
+    setConfirmBulkDelete(false);
+    setBulkParentOpen(false);
   }
 
   const withItems = categories.filter((c) => (Number(c.count) || 0) > 0).length;
@@ -281,74 +294,99 @@ export default function CategoryTreeView({
         </div>
       </div>
 
-      {selectedIds.size > 0 ? (
-        <div className="sp-ctree-bulk">
-          <span>
-            <strong>{selectedIds.size}</strong> categor
-            {selectedIds.size === 1 ? 'y' : 'ies'} selected
-          </span>
-          <div className="sp-ctree-bulk-actions">
-            <button
-              type="button"
-              className="sp-btn sp-btn-ghost sp-btn-sm"
-              disabled={saving}
-              onClick={() => {
-                setSelectedIds(new Set());
-                setBulkParentOpen(false);
-              }}
+      {bulkParentOpen && selectedIds.size > 0
+        ? createPortal(
+            <div
+              className="sp-modal-backdrop"
+              onClick={() => !saving && setBulkParentOpen(false)}
             >
-              Clear
-            </button>
-            <button
-              type="button"
-              className="sp-btn sp-btn-primary sp-btn-sm"
-              disabled={saving}
-              onClick={() => {
-                setBulkParentId(0);
-                setBulkParentOpen(true);
-              }}
-            >
-              Set parent…
-            </button>
-          </div>
-        </div>
-      ) : null}
+              <form
+                className="sp-modal sp-modal-sm"
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => e.stopPropagation()}
+                onSubmit={handleBulkSetParent}
+              >
+                <h2>Set parent category</h2>
+                <p>
+                  Applies to {selectedIds.size} selected categor
+                  {selectedIds.size === 1 ? 'y' : 'ies'}.
+                </p>
+                <label className="sp-label">
+                  Parent
+                  <select
+                    value={bulkParentId || ''}
+                    onChange={(e) =>
+                      setBulkParentId(e.target.value ? Number(e.target.value) : 0)
+                    }
+                  >
+                    <option value="">None (make top-level)</option>
+                    {parentOptions.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="sp-modal-actions">
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-ghost"
+                    disabled={saving}
+                    onClick={() => setBulkParentOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="sp-btn sp-btn-primary" disabled={saving}>
+                    {saving ? 'Saving…' : 'Apply parent'}
+                  </button>
+                </div>
+              </form>
+            </div>,
+            document.body
+          )
+        : null}
 
-      {bulkParentOpen && selectedIds.size > 0 ? (
-        <form className="sp-ctree-bulk-parent" onSubmit={handleBulkSetParent}>
-          <div className="sp-ctree-bulk-parent-copy">
-            <strong>Set parent category</strong>
-            <span>Applies to {selectedIds.size} selected categor{selectedIds.size === 1 ? 'y' : 'ies'}.</span>
-          </div>
-          <label>
-            Parent
-            <select
-              value={bulkParentId || ''}
-              onChange={(e) => setBulkParentId(e.target.value ? Number(e.target.value) : 0)}
+      {confirmBulkDelete && selectedIds.size > 0
+        ? createPortal(
+            <div
+              className="sp-modal-backdrop"
+              onClick={() => !saving && setConfirmBulkDelete(false)}
             >
-              <option value="">None (make top-level)</option>
-              {parentOptions.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="sp-ctree-bulk-parent-actions">
-            <button
-              type="button"
-              className="sp-btn sp-btn-ghost sp-btn-sm"
-              disabled={saving}
-              onClick={() => setBulkParentOpen(false)}
-            >
-              Cancel
-            </button>
-            <button type="submit" className="sp-btn sp-btn-primary sp-btn-sm" disabled={saving}>
-              {saving ? 'Saving…' : 'Apply parent'}
-            </button>
-          </div>
-        </form>
-      ) : null}
+              <div
+                className="sp-modal sp-modal-sm"
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2>Delete {selectedIds.size} categor{selectedIds.size === 1 ? 'y' : 'ies'}?</h2>
+                <p>
+                  Categories with subcategories will be skipped. Products stay in the shop but lose
+                  this category link. This cannot be undone.
+                </p>
+                <div className="sp-modal-actions">
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-ghost"
+                    disabled={saving}
+                    onClick={() => setConfirmBulkDelete(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-danger"
+                    disabled={saving}
+                    onClick={handleBulkDeleteConfirm}
+                  >
+                    {saving ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       {tree.length === 0 ? (
         <div className="sp-empty">
@@ -359,8 +397,7 @@ export default function CategoryTreeView({
       ) : (
         <div className="sp-ctree-canvas" role="tree" aria-label="Category structure">
           <p className="sp-ctree-select-hint">
-            Select any categories to bulk-set a parent. Use Edit for name, parent, and icon. Delete
-            stays single-category only.
+            Select categories for bulk Delete or Set parent. Use Edit for name, parent, and icon.
             {allVisibleIds.length > 0 ? ` · ${allVisibleIds.length} shown` : ''}
           </p>
           {tree.map((node) => (
@@ -381,6 +418,25 @@ export default function CategoryTreeView({
           ))}
         </div>
       )}
+
+      <CategoryBulkBar
+        count={selectedIds.size}
+        saving={saving}
+        onClear={() => {
+          setSelectedIds(new Set());
+          setBulkParentOpen(false);
+          setConfirmBulkDelete(false);
+        }}
+        onSetParent={() => {
+          setBulkParentId(0);
+          setConfirmBulkDelete(false);
+          setBulkParentOpen(true);
+        }}
+        onDelete={() => {
+          setBulkParentOpen(false);
+          setConfirmBulkDelete(true);
+        }}
+      />
     </div>
   );
 }

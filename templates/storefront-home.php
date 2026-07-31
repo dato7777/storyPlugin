@@ -2,43 +2,36 @@
 /**
  * StoryPhone — Home (Design-aware override from Inventory Manager).
  *
- * Uses storyphone-pages render/parts/assets, but builds the navbar from
- * Inventory Manager Design settings so an outdated pages Catalog cannot
- * force the automatic top-9 list.
+ * Uses storyphone-pages render/parts/assets, but builds the navbar and
+ * section content from Inventory Manager Design settings.
  *
  * @package StoryPhone_Inventory_Manager
  */
 
 defined( 'ABSPATH' ) || exit;
 
-$sp_stories  = StoryPhone_Pages_Stories::build( 10, 6 );
-$sp_hot      = StoryPhone_Pages_Catalog::get_hot_products( 6 );
-$sp_showcase = StoryPhone_Pages_Catalog::get_showcase_products( 8 );
-$sp_families = StoryPhone_Pages_Catalog::get_categories( 8, true );
-$sp_deal     = StoryPhone_Pages_Catalog::get_deal_product();
-$sp_nav      = StoryPhone_IM_Storefront_Design::get_nav_tree( 9 );
-$sp_pick     = ! empty( $sp_hot ) ? $sp_hot[0] : ( ! empty( $sp_showcase ) ? $sp_showcase[0] : null );
-$sp_nav_meta = StoryPhone_IM_Storefront_Design::get_nav_debug_meta();
+$sp_home    = StoryPhone_IM_Storefront_Design::resolve_home_data();
+$sp_nav     = $sp_home['nav'];
+$sp_stories = $sp_home['stories'];
+$sp_hot     = $sp_home['hot'];
+$sp_showcase = $sp_home['showcase'];
+$sp_families = $sp_home['families'];
+$sp_deal    = $sp_home['deal'];
+$sp_pick    = $sp_home['pick'];
+$sp_chips   = $sp_home['chips'];
+$sp_sections = $sp_home['sections'];
+$sp_content = $sp_home['section_content'];
+$sp_nav_meta = $sp_home['nav_meta'];
 
-$sp_sections = array(
-	'hero',
-	'story-rail',
-	'pick-deck',
-	'quick-reach',
-	'heat-board',
-	'showcase',
-	'deal',
-	'trust',
-	'editor-content',
-	'cta',
-);
-
-if ( class_exists( 'StoryPhone_IM_Design' ) ) {
-	$configured = StoryPhone_IM_Design::get_enabled_home_sections();
-	if ( ! empty( $configured ) ) {
-		$sp_sections = $configured;
-	}
-}
+/**
+ * Content bag for a section id.
+ *
+ * @param string $id Section slug.
+ * @return array<string, mixed>
+ */
+$sp_sc = static function ( $id ) use ( $sp_content ) {
+	return ( isset( $sp_content[ $id ] ) && is_array( $sp_content[ $id ] ) ) ? $sp_content[ $id ] : array();
+};
 
 /**
  * Render one homepage section by id.
@@ -46,36 +39,68 @@ if ( class_exists( 'StoryPhone_IM_Design' ) ) {
  * @param string $sp_section_id Section slug.
  * @return void
  */
-$sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stories, $sp_pick, $sp_deal, $sp_families, $sp_hot, $sp_showcase ) {
+$sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stories, $sp_pick, $sp_deal, $sp_families, $sp_hot, $sp_showcase, $sp_chips, $sp_sc ) {
+	$c = $sp_sc( $sp_section_id );
 	switch ( $sp_section_id ) {
 		case 'hero':
-			StoryPhone_Pages_Render::part( 'hero', array( 'nav' => $sp_nav ) );
+			StoryPhone_Pages_Render::part(
+				'hero',
+				array(
+					'nav'      => $sp_nav,
+					'chips'    => $sp_chips,
+					'title'    => isset( $c['title'] ) ? $c['title'] : '',
+					'subtitle' => isset( $c['subtitle'] ) ? $c['subtitle'] : '',
+				)
+			);
 			break;
 		case 'story-rail':
-			StoryPhone_Pages_Render::part( 'story-rail', array( 'stories' => $sp_stories ) );
+			StoryPhone_Pages_Render::part(
+				'story-rail',
+				array(
+					'stories'  => $sp_stories,
+					'title'    => isset( $c['title'] ) ? $c['title'] : '',
+					'subtitle' => isset( $c['subtitle'] ) ? $c['subtitle'] : '',
+				)
+			);
 			break;
 		case 'pick-deck':
 			StoryPhone_Pages_Render::part(
 				'pick-deck',
 				array(
-					'product' => $sp_pick,
-					'deal'    => $sp_deal,
+					'product'  => $sp_pick,
+					'deal'     => $sp_deal,
+					'title'    => isset( $c['title'] ) ? $c['title'] : '',
+					'subtitle' => isset( $c['subtitle'] ) ? $c['subtitle'] : '',
 				)
 			);
 			break;
 		case 'quick-reach':
-			StoryPhone_Pages_Render::part( 'quick-reach', array( 'categories' => $sp_families ) );
+			StoryPhone_Pages_Render::part(
+				'quick-reach',
+				array(
+					'categories' => $sp_families,
+					'title'      => isset( $c['title'] ) ? $c['title'] : '',
+					'subtitle'   => isset( $c['subtitle'] ) ? $c['subtitle'] : '',
+				)
+			);
 			break;
 		case 'heat-board':
-			StoryPhone_Pages_Render::part( 'heat-board', array( 'products' => $sp_hot ) );
+			StoryPhone_Pages_Render::part(
+				'heat-board',
+				array(
+					'products' => $sp_hot,
+					'title'    => isset( $c['title'] ) ? $c['title'] : '',
+					'subtitle' => isset( $c['subtitle'] ) ? $c['subtitle'] : '',
+				)
+			);
 			break;
 		case 'showcase':
 			StoryPhone_Pages_Render::part(
 				'showcase',
 				array(
 					'products' => $sp_showcase,
-					'title'    => __( 'נבחרת הבית', 'storyphone-pages' ),
-					'subtitle' => __( 'המכשירים והאביזרים שאנחנו עומדים מאחוריהם', 'storyphone-pages' ),
+					'title'    => ! empty( $c['title'] ) ? $c['title'] : __( 'נבחרת הבית', 'storyphone-pages' ),
+					'subtitle' => ! empty( $c['subtitle'] ) ? $c['subtitle'] : __( 'המכשירים והאביזרים שאנחנו עומדים מאחוריהם', 'storyphone-pages' ),
 				)
 			);
 			break;
@@ -83,13 +108,27 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			StoryPhone_Pages_Render::part( 'deal', array( 'product' => $sp_deal ) );
 			break;
 		case 'trust':
-			StoryPhone_Pages_Render::part( 'trust' );
+			StoryPhone_Pages_Render::part(
+				'trust',
+				array(
+					'title' => isset( $c['title'] ) ? $c['title'] : '',
+					'items' => isset( $c['items'] ) && is_array( $c['items'] ) ? $c['items'] : array(),
+				)
+			);
 			break;
 		case 'editor-content':
 			StoryPhone_Pages_Render::part( 'editor-content' );
 			break;
 		case 'cta':
-			StoryPhone_Pages_Render::part( 'cta' );
+			StoryPhone_Pages_Render::part(
+				'cta',
+				array(
+					'title'        => isset( $c['title'] ) ? $c['title'] : '',
+					'text'         => isset( $c['text'] ) ? $c['text'] : '',
+					'button_label' => isset( $c['button_label'] ) ? $c['button_label'] : '',
+					'button_url'   => isset( $c['button_url'] ) ? $c['button_url'] : '',
+				)
+			);
 			break;
 	}
 };

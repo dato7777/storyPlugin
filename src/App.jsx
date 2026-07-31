@@ -521,6 +521,31 @@ export default function App() {
     }
   }
 
+  async function handleBulkDeleteCategories(ids) {
+    setSaving(true);
+    try {
+      const result = await bulkCategories(ids, 'delete');
+      const deleted = result.deleted || 0;
+      const skipped = result.skipped || 0;
+      showToast(
+        skipped
+          ? `Deleted ${deleted} · skipped ${skipped} (still have subcategories)`
+          : `Deleted ${deleted} categor${deleted === 1 ? 'y' : 'ies'}`,
+        deleted ? 'success' : 'error'
+      );
+      if (category && ids.includes(category)) {
+        setCategory(0);
+      }
+      await loadCategories();
+      await loadStats();
+      await loadProducts();
+    } catch (err) {
+      showToast(err.message || 'Could not delete categories', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleCategoryDelete() {
     if (!activeCategory) return;
     setSaving(true);
@@ -723,6 +748,7 @@ export default function App() {
                 onCreateCategory={openCreateCategory}
                 onEditCategory={openEditCategory}
                 onBulkSetParent={handleBulkSetParent}
+                onBulkDelete={handleBulkDeleteCategories}
                 saving={saving}
               />
             ) : loading && products.length === 0 ? (

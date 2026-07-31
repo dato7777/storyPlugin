@@ -1880,7 +1880,7 @@ class StoryPhone_IM_REST_Controller {
 	}
 
 	/**
-	 * POST /categories/bulk — bulk set parent for categories.
+	 * POST /categories/bulk — bulk set parent or delete categories.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @return WP_REST_Response|WP_Error
@@ -1901,10 +1901,11 @@ class StoryPhone_IM_REST_Controller {
 			? array_values( array_filter( array_map( 'absint', $params['ids'] ) ) )
 			: array();
 
-		if ( 'set_parent' !== $action || empty( $ids ) ) {
+		$allowed = array( 'set_parent', 'delete' );
+		if ( ! in_array( $action, $allowed, true ) || empty( $ids ) ) {
 			return new WP_Error(
 				'storyphone_im_bulk_category_invalid',
-				__( 'Provide category ids and action set_parent.', 'storyphone-inventory-manager' ),
+				__( 'Provide category ids and action set_parent or delete.', 'storyphone-inventory-manager' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -1917,9 +1918,13 @@ class StoryPhone_IM_REST_Controller {
 			);
 		}
 
-		$parent    = isset( $params['parent'] ) ? absint( $params['parent'] ) : 0;
-		$updated   = 0;
-		$skipped   = 0;
+		if ( 'delete' === $action ) {
+			return self::bulk_delete_categories( $ids );
+		}
+
+		$parent  = isset( $params['parent'] ) ? absint( $params['parent'] ) : 0;
+		$updated = 0;
+		$skipped = 0;
 
 		foreach ( $ids as $term_id ) {
 			if ( $parent > 0 && $parent === $term_id ) {
@@ -1964,6 +1969,76 @@ class StoryPhone_IM_REST_Controller {
 				'skipped' => $skipped,
 				'action'  => 'set_parent',
 				'parent'  => $parent,
+			)
+		);
+	}
+
+	/**
+	 * Bulk-delete product categories (skips terms that still have children).
+	 *
+	 * @param int[] $ids Term IDs.
+	 * @return WP_REST_Response
+	 */
+	private static function bulk_delete_categories( array $ids ) {
+		$deleted = 0;
+		$skipped = 0;
+
+		// Delete deepest terms first so parents can succeed in the same batch.
+		usort(
+			$ids,
+			static function ( $a, $b ) {
+				$ta = get_term( (int) $a, 'product_cat' );
+				$tb = get_term( (int) $b, 'product_cat' );
+				$da = ( $ta && ! is_wp_error( $ta ) ) ? count( get_ancestors( (int) $a, 'product_cat' ) ) : 0;
+				$db = ( $tb && ! is_wp_error( $tb ) ) ? count( get_ancestors( (int) $b, 'product_cat' ) ) : 0;
+				return $db - $da;
+			}
+		);
+
+		foreach ( $ids as $term_id ) {
+			$term = get_term( $term_id, 'product_cat' );
+			if ( ! $term || is_wp_error( $term ) ) {
+				++$skipped;
+				continue;
+			}
+
+			$children = get_terms(
+				array(
+					'taxonomy'   => 'product_cat',
+					'parent'     => $term_id,
+					'hide_empty' => false,
+					'fields'     => 'ids',
+				)
+			);
+			if ( ! is_wp_error( $children ) && ! empty( $children ) ) {
+				++$skipped;
+				continue;
+			}
+
+			$result = wp_delete_term( $term_id, 'product_cat' );
+			if ( is_wp_error( $result ) || ! $result ) {
+				++$skipped;
+				continue;
+			}
+
+			++$deleted;
+			StoryPhone_IM_Audit_Log::log(
+				'trash',
+				0,
+				array(
+					'category_id'   => (string) $term_id,
+					'category_name' => $term->name,
+					'bulk'          => 'delete',
+				)
+			);
+		}
+
+		return rest_ensure_response(
+			array(
+				'success' => true,
+				'deleted' => $deleted,
+				'skipped' => $skipped,
+				'action'  => 'delete',
 			)
 		);
 	}

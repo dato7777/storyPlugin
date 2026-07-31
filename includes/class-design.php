@@ -77,12 +77,44 @@ class StoryPhone_IM_Design {
 	}
 
 	/**
+	 * Read storyphone_design from the DB (bypass object cache).
+	 *
+	 * Staging hosts often leave get_option() stale after update_option(), so the
+	 * storefront already used a direct read. The Design admin must do the same
+	 * or saved navbar toggles look "all off" after refresh.
+	 *
+	 * @return array
+	 */
+	public static function read_option_fresh() {
+		global $wpdb;
+
+		wp_cache_delete( self::OPTION_KEY, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$row = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
+				self::OPTION_KEY
+			)
+		);
+
+		if ( null === $row || false === $row ) {
+			return array();
+		}
+
+		$data = maybe_unserialize( $row );
+		return is_array( $data ) ? $data : array();
+	}
+
+	/**
 	 * Read stored design settings with defaults.
 	 *
 	 * @return array
 	 */
 	public static function get_settings() {
-		$raw = get_option( self::OPTION_KEY, array() );
+		$raw = self::read_option_fresh();
 		if ( ! is_array( $raw ) ) {
 			$raw = array();
 		}
@@ -103,15 +135,179 @@ class StoryPhone_IM_Design {
 			isset( $home['sections'] ) && is_array( $home['sections'] ) ? $home['sections'] : array()
 		);
 
+		$section_content = self::merge_section_content(
+			isset( $home['section_content'] ) && is_array( $home['section_content'] ) ? $home['section_content'] : array()
+		);
+
 		return array(
 			'pages' => array(
 				'home' => array(
 					'nav_category_ids' => $nav_ids,
 					'nav_custom'       => $nav_custom,
 					'sections'         => $sections,
+					'section_content'  => $section_content,
 				),
 			),
 		);
+	}
+
+	/**
+	 * Default editable content bags per homepage section.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public static function default_section_content() {
+		return array(
+			'hero'           => array(
+				'chip_category_ids' => array(),
+				'title'             => '',
+				'subtitle'          => '',
+			),
+			'story-rail'     => array(
+				'category_ids' => array(),
+				'title'        => '',
+				'subtitle'     => '',
+			),
+			'pick-deck'      => array(
+				'product_id' => 0,
+				'title'      => '',
+				'subtitle'   => '',
+			),
+			'quick-reach'    => array(
+				'category_ids' => array(),
+				'title'        => '',
+				'subtitle'     => '',
+			),
+			'heat-board'     => array(
+				'product_ids' => array(),
+				'title'       => '',
+				'subtitle'    => '',
+			),
+			'showcase'       => array(
+				'product_ids' => array(),
+				'title'       => '',
+				'subtitle'    => '',
+			),
+			'deal'           => array(
+				'product_id' => 0,
+			),
+			'trust'          => array(
+				'title' => '',
+				'items' => array(),
+			),
+			'editor-content' => array(
+				'note' => '',
+			),
+			'cta'            => array(
+				'title'        => '',
+				'text'         => '',
+				'button_label' => '',
+				'button_url'   => '',
+			),
+		);
+	}
+
+	/**
+	 * Merge saved section content with defaults.
+	 *
+	 * @param array $saved Saved map.
+	 * @return array<string, array<string, mixed>>
+	 */
+	private static function merge_section_content( $saved ) {
+		$defaults = self::default_section_content();
+		$out      = array();
+		foreach ( $defaults as $id => $def ) {
+			$row = isset( $saved[ $id ] ) && is_array( $saved[ $id ] ) ? $saved[ $id ] : array();
+			$out[ $id ] = self::sanitize_one_section_content( $id, array_merge( $def, $row ) );
+		}
+		return $out;
+	}
+
+	/**
+	 * Sanitize one section content bag.
+	 *
+	 * @param string $id   Section id.
+	 * @param array  $row  Raw row.
+	 * @return array<string, mixed>
+	 */
+	private static function sanitize_one_section_content( $id, $row ) {
+		$id  = sanitize_key( $id );
+		$row = is_array( $row ) ? $row : array();
+
+		$ids = static function ( $key, $max = 24 ) use ( $row ) {
+			if ( empty( $row[ $key ] ) || ! is_array( $row[ $key ] ) ) {
+				return array();
+			}
+			$clean = array_values( array_unique( array_filter( array_map( 'absint', $row[ $key ] ) ) ) );
+			return array_slice( $clean, 0, $max );
+		};
+
+		switch ( $id ) {
+			case 'hero':
+				return array(
+					'chip_category_ids' => $ids( 'chip_category_ids', 8 ),
+					'title'             => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
+					'subtitle'          => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
+				);
+			case 'story-rail':
+			case 'quick-reach':
+				return array(
+					'category_ids' => $ids( 'category_ids', 12 ),
+					'title'        => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
+					'subtitle'     => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
+				);
+			case 'pick-deck':
+				return array(
+					'product_id' => isset( $row['product_id'] ) ? absint( $row['product_id'] ) : 0,
+					'title'      => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
+					'subtitle'   => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
+				);
+			case 'heat-board':
+			case 'showcase':
+				return array(
+					'product_ids' => $ids( 'product_ids', 12 ),
+					'title'       => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
+					'subtitle'    => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
+				);
+			case 'deal':
+				return array(
+					'product_id' => isset( $row['product_id'] ) ? absint( $row['product_id'] ) : 0,
+				);
+			case 'trust':
+				$items = array();
+				if ( ! empty( $row['items'] ) && is_array( $row['items'] ) ) {
+					foreach ( array_slice( $row['items'], 0, 8 ) as $item ) {
+						if ( ! is_array( $item ) ) {
+							continue;
+						}
+						$title = isset( $item['title'] ) ? sanitize_text_field( $item['title'] ) : '';
+						$text  = isset( $item['text'] ) ? sanitize_text_field( $item['text'] ) : '';
+						if ( '' === $title && '' === $text ) {
+							continue;
+						}
+						$items[] = array(
+							'title' => $title,
+							'text'  => $text,
+						);
+					}
+				}
+				return array(
+					'title' => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
+					'items' => $items,
+				);
+			case 'cta':
+				return array(
+					'title'        => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
+					'text'         => isset( $row['text'] ) ? sanitize_textarea_field( $row['text'] ) : '',
+					'button_label' => isset( $row['button_label'] ) ? sanitize_text_field( $row['button_label'] ) : '',
+					'button_url'   => isset( $row['button_url'] ) ? esc_url_raw( $row['button_url'] ) : '',
+				);
+			case 'editor-content':
+			default:
+				return array(
+					'note' => '',
+				);
+		}
 	}
 
 	/**
@@ -286,13 +482,14 @@ class StoryPhone_IM_Design {
 		$nav_items = array();
 		$by_id     = array();
 		foreach ( $nav_candidates as $row ) {
-			$by_id[ $row['id'] ] = $row;
+			$by_id[ (int) $row['id'] ] = $row;
 		}
 
 		// Only mark items enabled when Design was actually saved with those IDs.
 		// Do not fake "first 9 on" — that made the UI lie when nothing was stored.
 		if ( $nav_custom && ! empty( $selected ) ) {
 			foreach ( $selected as $id ) {
+				$id = (int) $id;
 				if ( isset( $by_id[ $id ] ) ) {
 					$nav_items[] = array_merge( $by_id[ $id ], array( 'enabled' => true ) );
 					unset( $by_id[ $id ] );
@@ -324,11 +521,12 @@ class StoryPhone_IM_Design {
 					array(
 						'id'          => 'sections',
 						'title'       => __( 'Page sections', 'storyphone-inventory-manager' ),
-						'description' => __( 'Homepage stack from top to bottom. Toggle visibility or reorder.', 'storyphone-inventory-manager' ),
+						'description' => __( 'Homepage stack from top to bottom. Toggle visibility, reorder, and choose what appears inside each section.', 'storyphone-inventory-manager' ),
 						'type'        => 'sections',
 						'items'       => $home['sections'],
 					),
 				),
+				'section_content' => $home['section_content'],
 			)
 		);
 	}
@@ -430,6 +628,13 @@ class StoryPhone_IM_Design {
 			$sections = $ordered;
 		}
 
+		if ( isset( $params['section_content'] ) && is_array( $params['section_content'] ) ) {
+			$section_content = self::merge_section_content( $params['section_content'] );
+		} else {
+			// Keep previously saved content when client omits the field.
+			$section_content = self::get_settings()['pages']['home']['section_content'];
+		}
+
 		// Persist explicitly — nav_custom means storefront must not use auto top-9.
 		$payload = array(
 			'pages' => array(
@@ -437,6 +642,7 @@ class StoryPhone_IM_Design {
 					'nav_category_ids' => $nav_ids,
 					'nav_custom'       => true,
 					'sections'         => $sections,
+					'section_content'  => $section_content,
 				),
 			),
 		);
@@ -446,9 +652,10 @@ class StoryPhone_IM_Design {
 		// Object cache can keep a stale get_option() even when WP_CACHE is false.
 		wp_cache_delete( self::OPTION_KEY, 'options' );
 		wp_cache_delete( 'notoptions', 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
 
 		// Verify write landed in DB (helps catch staging/object-cache mismatches).
-		$verify = get_option( self::OPTION_KEY, null );
+		$verify = self::read_option_fresh();
 		if ( ! is_array( $verify ) || empty( $verify['pages']['home']['nav_custom'] ) ) {
 			// Force direct write if update_option was a no-op / cache lie.
 			global $wpdb;
@@ -566,5 +773,32 @@ class StoryPhone_IM_Design {
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * Content bag for one homepage section (merged defaults).
+	 *
+	 * @param string $section_id Section slug.
+	 * @return array<string, mixed>
+	 */
+	public static function get_section_content( $section_id ) {
+		$section_id = sanitize_key( $section_id );
+		$settings   = self::get_settings();
+		$map        = $settings['pages']['home']['section_content'];
+		if ( isset( $map[ $section_id ] ) && is_array( $map[ $section_id ] ) ) {
+			return $map[ $section_id ];
+		}
+		$defaults = self::default_section_content();
+		return isset( $defaults[ $section_id ] ) ? $defaults[ $section_id ] : array();
+	}
+
+	/**
+	 * Full section_content map.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public static function get_all_section_content() {
+		$settings = self::get_settings();
+		return $settings['pages']['home']['section_content'];
 	}
 }

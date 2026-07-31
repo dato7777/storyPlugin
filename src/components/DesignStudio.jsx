@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { fetchDesignPage, fetchDesignPages, saveDesignPage } from '../api.js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { fetchCategories, fetchDesignPage, fetchDesignPages, fetchProducts, saveDesignPage } from '../api.js';
+import SectionContentEditor from './SectionContentEditor.jsx';
 
 function moveItem(list, index, dir) {
   const next = list.slice();
@@ -11,6 +12,19 @@ function moveItem(list, index, dir) {
   return next;
 }
 
+const EMPTY_SECTION_CONTENT = {
+  hero: { chip_category_ids: [], title: '', subtitle: '' },
+  'story-rail': { category_ids: [], title: '', subtitle: '' },
+  'pick-deck': { product_id: 0, title: '', subtitle: '' },
+  'quick-reach': { category_ids: [], title: '', subtitle: '' },
+  'heat-board': { product_ids: [], title: '', subtitle: '' },
+  showcase: { product_ids: [], title: '', subtitle: '' },
+  deal: { product_id: 0 },
+  trust: { title: '', items: [] },
+  'editor-content': { note: '' },
+  cta: { title: '', text: '', button_label: '', button_url: '' },
+};
+
 export default function DesignStudio({ showToast }) {
   const [pages, setPages] = useState([]);
   const [loadingPages, setLoadingPages] = useState(true);
@@ -18,8 +32,14 @@ export default function DesignStudio({ showToast }) {
   const [design, setDesign] = useState(null);
   const [navItems, setNavItems] = useState([]);
   const [sections, setSections] = useState([]);
+  const [sectionContent, setSectionContent] = useState(EMPTY_SECTION_CONTENT);
+  const [expandedSection, setExpandedSection] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [productsById, setProductsById] = useState({});
   const [loadingDesign, setLoadingDesign] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const storefrontReady = Boolean(window.storyphoneSettings?.storefrontReady);
 
   const loadPages = useCallback(async () => {
     setLoadingPages(true);
@@ -44,12 +64,37 @@ export default function DesignStudio({ showToast }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [catData, prodData] = await Promise.all([
+          fetchCategories(),
+          fetchProducts({ page: 1, perPage: 100, collection: 'all' }),
+        ]);
+        if (cancelled) return;
+        setCategories(catData.categories || []);
+        const map = {};
+        (prodData.products || []).forEach((p) => {
+          map[p.id] = p;
+        });
+        setProductsById(map);
+      } catch {
+        /* non-blocking for design shell */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!activeKey) return;
     const page = pages.find((p) => p.key === activeKey);
     if (page?.readonly) {
       setDesign(null);
       setNavItems([]);
       setSections([]);
+      setSectionContent(EMPTY_SECTION_CONTENT);
       return;
     }
 
@@ -64,6 +109,10 @@ export default function DesignStudio({ showToast }) {
         const secBlock = (data.blocks || []).find((b) => b.type === 'sections');
         setNavItems(navBlock?.items || []);
         setSections(secBlock?.items || []);
+        setSectionContent({
+          ...EMPTY_SECTION_CONTENT,
+          ...(data.section_content || {}),
+        });
       } catch (err) {
         if (!cancelled) showToast?.(err.message || 'Could not load design', 'error');
       } finally {
@@ -75,6 +124,16 @@ export default function DesignStudio({ showToast }) {
       cancelled = true;
     };
   }, [activeKey, pages, showToast]);
+
+  const categoryOptions = useMemo(
+    () =>
+      (categories || []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        count: c.count ?? 0,
+      })),
+    [categories]
+  );
 
   async function handleSave() {
     if (!activeKey || !design || loadingDesign) return;
@@ -97,16 +156,21 @@ export default function DesignStudio({ showToast }) {
       const data = await saveDesignPage(activeKey, {
         nav_category_ids,
         sections,
+        section_content: sectionContent,
       });
       setDesign(data);
       const navBlock = (data.blocks || []).find((b) => b.type === 'nav_categories');
       const secBlock = (data.blocks || []).find((b) => b.type === 'sections');
       setNavItems(navBlock?.items || []);
       setSections(secBlock?.items || []);
+      setSectionContent({
+        ...EMPTY_SECTION_CONTENT,
+        ...(data.section_content || {}),
+      });
       showToast?.(
-        `Design saved — header will show ${nav_category_ids.length} categor${
+        `Design saved — header ${nav_category_ids.length} categor${
           nav_category_ids.length === 1 ? 'y' : 'ies'
-        }. Hard-refresh the homepage preview.`,
+        }. Hard-refresh homepage preview.`,
         'success'
       );
     } catch (err) {
@@ -117,8 +181,6 @@ export default function DesignStudio({ showToast }) {
   }
 
   const activePage = pages.find((p) => p.key === activeKey);
-
-  const storefrontReady = Boolean(window.storyphoneSettings?.storefrontReady);
 
   return (
     <div className="sp-design">
@@ -136,9 +198,8 @@ export default function DesignStudio({ showToast }) {
             </p>
           ) : (
             <p className="sp-design-sub" style={{ marginTop: 10 }}>
-              After Save, hard-refresh the StoryPhone — Home preview. Logged-in admins see a dark
-              badge (bottom-left) with nav mode/count — it must say <strong>custom</strong> and your
-              item count (e.g. 7), not auto · 9.
+              Expand a section to choose categories/products and optional titles. Empty picks keep
+              automatic content.
             </p>
           )}
         </div>
@@ -202,7 +263,9 @@ export default function DesignStudio({ showToast }) {
               <div className="sp-design-editor-bar">
                 <div>
                   <h3 className="sp-design-editor-title">{design?.title || activePage.title}</h3>
-                  <p className="sp-design-muted">Edit in order — navbar first, then sections down the page.</p>
+                  <p className="sp-design-muted">
+                    Navbar first, then each section’s content down the page.
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -220,10 +283,9 @@ export default function DesignStudio({ showToast }) {
                   <div>
                     <h4>Navbar items</h4>
                     <p>
-                      Toggle on/off, reorder with arrows (top = first in header). Max 9 on site.
-                      Currently on:{' '}
+                      Toggle on/off, reorder (top = first). Max 9. Currently on:{' '}
                       <strong>{navItems.filter((i) => i.enabled).length}</strong>
-                      {design?.nav_custom ? '' : ' — not saved yet (header still uses auto top 9)'}.
+                      {design?.nav_custom ? '' : ' — not saved yet'}.
                     </p>
                   </div>
                 </div>
@@ -281,55 +343,92 @@ export default function DesignStudio({ showToast }) {
                   <span className="sp-design-block-step">2</span>
                   <div>
                     <h4>Page sections</h4>
-                    <p>Homepage stack from top to bottom. Disable what you don’t want shown.</p>
+                    <p>
+                      Toggle visibility, reorder, then expand a section to choose what appears
+                      inside.
+                    </p>
                   </div>
                 </div>
-                <ul className="sp-design-item-list">
-                  {sections.map((item, index) => (
-                    <li
-                      key={item.id}
-                      className={`sp-design-item ${item.enabled ? 'is-on' : 'is-off'}`}
-                    >
-                      <label className={`sp-switch ${item.enabled ? 'is-on' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={!!item.enabled}
-                          onChange={() =>
-                            setSections((list) =>
-                              list.map((row, i) =>
-                                i === index ? { ...row, enabled: !row.enabled } : row
-                              )
-                            )
-                          }
-                        />
-                        <span className="sp-switch-track" aria-hidden="true" />
-                      </label>
-                      <div className="sp-design-item-body">
-                        <strong>{item.label}</strong>
-                        <span className="sp-design-item-id">{item.id}</span>
-                      </div>
-                      <div className="sp-design-item-move">
-                        <button
-                          type="button"
-                          className="sp-btn sp-btn-ghost sp-btn-sm"
-                          disabled={index === 0}
-                          onClick={() => setSections((list) => moveItem(list, index, -1))}
-                          aria-label="Move up"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          className="sp-btn sp-btn-ghost sp-btn-sm"
-                          disabled={index === sections.length - 1}
-                          onClick={() => setSections((list) => moveItem(list, index, 1))}
-                          aria-label="Move down"
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    </li>
-                  ))}
+                <ul className="sp-design-item-list sp-design-section-list">
+                  {sections.map((item, index) => {
+                    const open = expandedSection === item.id;
+                    return (
+                      <li
+                        key={item.id}
+                        className={`sp-design-section-card ${item.enabled ? 'is-on' : 'is-off'} ${
+                          open ? 'is-open' : ''
+                        }`}
+                      >
+                        <div className="sp-design-section-card-top">
+                          <label className={`sp-switch ${item.enabled ? 'is-on' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={!!item.enabled}
+                              onChange={() =>
+                                setSections((list) =>
+                                  list.map((row, i) =>
+                                    i === index ? { ...row, enabled: !row.enabled } : row
+                                  )
+                                )
+                              }
+                            />
+                            <span className="sp-switch-track" aria-hidden="true" />
+                          </label>
+                          <button
+                            type="button"
+                            className="sp-design-section-toggle"
+                            onClick={() =>
+                              setExpandedSection((cur) => (cur === item.id ? null : item.id))
+                            }
+                          >
+                            <span className="sp-design-item-body">
+                              <strong>{item.label}</strong>
+                              <span className="sp-design-item-id">{item.id}</span>
+                            </span>
+                            <span className="sp-design-section-chev" aria-hidden="true">
+                              {open ? '▾' : '▸'}
+                            </span>
+                          </button>
+                          <div className="sp-design-item-move">
+                            <button
+                              type="button"
+                              className="sp-btn sp-btn-ghost sp-btn-sm"
+                              disabled={index === 0}
+                              onClick={() => setSections((list) => moveItem(list, index, -1))}
+                              aria-label="Move up"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className="sp-btn sp-btn-ghost sp-btn-sm"
+                              disabled={index === sections.length - 1}
+                              onClick={() => setSections((list) => moveItem(list, index, 1))}
+                              aria-label="Move down"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        {open ? (
+                          <div className="sp-design-section-body">
+                            <SectionContentEditor
+                              sectionId={item.id}
+                              content={sectionContent[item.id] || EMPTY_SECTION_CONTENT[item.id] || {}}
+                              onChange={(next) =>
+                                setSectionContent((prev) => ({
+                                  ...prev,
+                                  [item.id]: next,
+                                }))
+                              }
+                              categories={categoryOptions}
+                              productsById={productsById}
+                            />
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             </>
