@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { flattenCategoriesForSelect } from '../categories.js';
+import { openMediaLibrary } from '../lib/mediaLibrary.js';
 import StockToggle from './StockToggle.jsx';
 import QuantityStepper from './QuantityStepper.jsx';
 import RichTextEditor from './RichTextEditor.jsx';
@@ -27,22 +28,26 @@ export default function ProductEditPanel({
   onClose,
   onSave,
   onRequestDelete,
-  onUploadImage,
   onDeleteImage,
   onSetFeaturedImage,
 }) {
   const [form, setForm] = useState(blank);
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [pendingLibrary, setPendingLibrary] = useState([]);
+  const [mediaOpen, setMediaOpen] = useState(false);
   const [tab, setTab] = useState('basics');
   const categoryOptions = useMemo(() => flattenCategoriesForSelect(categories), [categories]);
 
   const images = product?.images || [];
   const featuredId = form.image_id || product?.image_id || 0;
+  const blockDismiss = saving || mediaOpen;
 
   useEffect(() => {
     if (!product) {
       setForm(blank);
       setPendingFiles([]);
+      setPendingLibrary([]);
+      setMediaOpen(false);
       setTab('basics');
       return;
     }
@@ -65,13 +70,15 @@ export default function ProductEditPanel({
       image_id: product.image_id || 0,
     });
     setPendingFiles([]);
+    setPendingLibrary([]);
+    setMediaOpen(false);
     setTab('basics');
   }, [product]);
 
   useEffect(() => {
     if (!open) return undefined;
     function onKey(e) {
-      if (e.key === 'Escape' && !saving) onClose();
+      if (e.key === 'Escape' && !blockDismiss) onClose();
     }
     window.addEventListener('keydown', onKey);
     document.body.classList.add('storyphone-im-panel-open');
@@ -79,7 +86,7 @@ export default function ProductEditPanel({
       window.removeEventListener('keydown', onKey);
       document.body.classList.remove('storyphone-im-panel-open');
     };
-  }, [open, saving, onClose]);
+  }, [open, blockDismiss, onClose]);
 
   if (!open) return null;
 
@@ -98,7 +105,10 @@ export default function ProductEditPanel({
         category_ids: form.category_ids,
         image_id: form.image_id || 0,
       },
-      pendingFiles
+      {
+        files: pendingFiles,
+        libraryIds: pendingLibrary.map((item) => item.id),
+      }
     );
   }
 
@@ -108,8 +118,41 @@ export default function ProductEditPanel({
     setPendingFiles((prev) => [...prev, ...files]);
   }
 
+  async function pickFromLibrary() {
+    try {
+      const picked = await openMediaLibrary({
+        multiple: true,
+        title: 'Select images from Media Library',
+        buttonText: 'Add to product',
+        onOpen: () => setMediaOpen(true),
+        onClose: () => setMediaOpen(false),
+      });
+      setMediaOpen(false);
+      if (!picked.length) return;
+      setPendingLibrary((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        const next = [...prev];
+        picked.forEach((item) => {
+          if (!seen.has(item.id)) {
+            seen.add(item.id);
+            next.push(item);
+          }
+        });
+        return next;
+      });
+    } catch (err) {
+      setMediaOpen(false);
+      window.alert(err.message || 'Could not open Media Library');
+    }
+  }
+
   const panel = (
-    <div className="sp-panel-backdrop is-open" onClick={() => !saving && onClose()}>
+    <div
+      className="sp-panel-backdrop is-open"
+      onClick={() => {
+        if (!blockDismiss) onClose();
+      }}
+    >
       <aside
         className="sp-panel is-open"
         role="dialog"
@@ -161,7 +204,7 @@ export default function ProductEditPanel({
                   Preferred size: <strong>600×600 px</strong> (square). JPG, PNG, GIF, or WebP.
                 </p>
 
-                {images.length === 0 && pendingFiles.length === 0 ? (
+                {images.length === 0 && pendingFiles.length === 0 && pendingLibrary.length === 0 ? (
                   <div className="sp-image-preview sp-image-preview-lg">
                     <span>No image</span>
                   </div>
@@ -185,7 +228,7 @@ export default function ProductEditPanel({
                               <button
                                 type="button"
                                 className="sp-btn sp-btn-soft sp-btn-sm"
-                                disabled={saving}
+                                disabled={saving || mediaOpen}
                                 onClick={() => onSetFeaturedImage(img.id)}
                               >
                                 Set as default
@@ -196,7 +239,7 @@ export default function ProductEditPanel({
                             <button
                               type="button"
                               className="sp-btn sp-btn-danger-soft sp-btn-sm"
-                              disabled={saving}
+                              disabled={saving || mediaOpen}
                               onClick={() => {
                                 if (window.confirm('Remove this image from the product?')) {
                                   onDeleteImage(img.id);
@@ -210,10 +253,10 @@ export default function ProductEditPanel({
                       );
                     })}
                     {pendingFiles.map((file, idx) => (
-                      <div key={`pending-${idx}`} className="sp-image-tile is-pending">
+                      <div key={`pending-file-${idx}`} className="sp-image-tile is-pending">
                         <div className="sp-image-tile-preview">
                           <img src={URL.createObjectURL(file)} alt="" />
-                          <span className="sp-image-tile-badge">Pending</span>
+                          <span className="sp-image-tile-badge">Pending · Local</span>
                         </div>
                         <div className="sp-image-tile-actions">
                           <button
@@ -228,41 +271,57 @@ export default function ProductEditPanel({
                         </div>
                       </div>
                     ))}
+                    {pendingLibrary.map((item) => (
+                      <div key={`pending-lib-${item.id}`} className="sp-image-tile is-pending">
+                        <div className="sp-image-tile-preview">
+                          {item.url ? <img src={item.url} alt="" /> : <span>—</span>}
+                          <span className="sp-image-tile-badge">Pending · Library</span>
+                        </div>
+                        <div className="sp-image-tile-actions">
+                          <button
+                            type="button"
+                            className="sp-btn sp-btn-ghost sp-btn-sm"
+                            onClick={() =>
+                              setPendingLibrary((prev) => prev.filter((row) => row.id !== item.id))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                <label className="sp-btn sp-btn-ghost sp-file-label">
-                  Upload image
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp"
-                    hidden
-                    multiple
-                    onChange={(e) => {
-                      queueFiles(e.target.files);
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-                <p className="sp-help">
-                  New uploads are saved when you press Save. Use “Set as default” to choose which
-                  image appears on the website.
-                </p>
-                {onUploadImage ? (
+                <div className="sp-image-source-row">
+                  <label className={`sp-btn sp-btn-ghost sp-file-label ${mediaOpen ? 'is-disabled' : ''}`}>
+                    Local
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      hidden
+                      multiple
+                      disabled={saving || mediaOpen}
+                      onChange={(e) => {
+                        queueFiles(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
                   <button
                     type="button"
-                    className="sp-btn sp-btn-soft sp-btn-sm"
-                    disabled={saving || pendingFiles.length === 0}
-                    onClick={async () => {
-                      for (const file of pendingFiles) {
-                        await onUploadImage(file, images.length === 0);
-                      }
-                      setPendingFiles([]);
-                    }}
+                    className="sp-btn sp-btn-ghost"
+                    disabled={saving || mediaOpen}
+                    onClick={pickFromLibrary}
                   >
-                    Upload now
+                    Library
                   </button>
-                ) : null}
+                </div>
+                <p className="sp-help">
+                  <strong>Local</strong> = from this computer. <strong>Library</strong> = WordPress
+                  Media Library (opens over this panel). Pending images apply only when you press{' '}
+                  <strong>Save</strong>.
+                </p>
               </div>
             ) : (
               <>

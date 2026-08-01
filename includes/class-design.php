@@ -159,46 +159,55 @@ class StoryPhone_IM_Design {
 	public static function default_section_content() {
 		return array(
 			'hero'           => array(
+				'custom'            => false,
 				'chip_category_ids' => array(),
 				'title'             => '',
 				'subtitle'          => '',
 			),
 			'story-rail'     => array(
+				'custom'       => false,
 				'category_ids' => array(),
 				'title'        => '',
 				'subtitle'     => '',
 			),
 			'pick-deck'      => array(
+				'custom'     => false,
 				'product_id' => 0,
 				'title'      => '',
 				'subtitle'   => '',
 			),
 			'quick-reach'    => array(
+				'custom'       => false,
 				'category_ids' => array(),
 				'title'        => '',
 				'subtitle'     => '',
 			),
 			'heat-board'     => array(
+				'custom'      => false,
 				'product_ids' => array(),
 				'title'       => '',
 				'subtitle'    => '',
 			),
 			'showcase'       => array(
+				'custom'      => false,
 				'product_ids' => array(),
 				'title'       => '',
 				'subtitle'    => '',
 			),
 			'deal'           => array(
+				'custom'     => false,
 				'product_id' => 0,
 			),
 			'trust'          => array(
-				'title' => '',
-				'items' => array(),
+				'custom' => false,
+				'title'  => '',
+				'items'  => array(),
 			),
 			'editor-content' => array(
 				'note' => '',
 			),
 			'cta'            => array(
+				'custom'       => false,
 				'title'        => '',
 				'text'         => '',
 				'button_label' => '',
@@ -242,36 +251,51 @@ class StoryPhone_IM_Design {
 			return array_slice( $clean, 0, $max );
 		};
 
+		$custom_flag = static function () use ( $row ) {
+			return ! empty( $row['custom'] );
+		};
+
 		switch ( $id ) {
 			case 'hero':
+				$chip_ids = $ids( 'chip_category_ids', 8 );
 				return array(
-					'chip_category_ids' => $ids( 'chip_category_ids', 8 ),
+					// Legacy: non-empty ID list counts as custom even without the flag.
+					'custom'            => $custom_flag() || ! empty( $chip_ids ),
+					'chip_category_ids' => $chip_ids,
 					'title'             => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
 					'subtitle'          => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
 				);
 			case 'story-rail':
 			case 'quick-reach':
+				$cat_ids = $ids( 'category_ids', 12 );
 				return array(
-					'category_ids' => $ids( 'category_ids', 12 ),
+					'custom'       => $custom_flag() || ! empty( $cat_ids ),
+					'category_ids' => $cat_ids,
 					'title'        => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
 					'subtitle'     => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
 				);
 			case 'pick-deck':
+				$pid = isset( $row['product_id'] ) ? absint( $row['product_id'] ) : 0;
 				return array(
-					'product_id' => isset( $row['product_id'] ) ? absint( $row['product_id'] ) : 0,
+					'custom'     => $custom_flag() || $pid > 0,
+					'product_id' => $pid,
 					'title'      => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
 					'subtitle'   => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
 				);
 			case 'heat-board':
 			case 'showcase':
+				$pids = $ids( 'product_ids', 12 );
 				return array(
-					'product_ids' => $ids( 'product_ids', 12 ),
+					'custom'      => $custom_flag() || ! empty( $pids ),
+					'product_ids' => $pids,
 					'title'       => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
 					'subtitle'    => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
 				);
 			case 'deal':
+				$pid = isset( $row['product_id'] ) ? absint( $row['product_id'] ) : 0;
 				return array(
-					'product_id' => isset( $row['product_id'] ) ? absint( $row['product_id'] ) : 0,
+					'custom'     => $custom_flag() || $pid > 0,
+					'product_id' => $pid,
 				);
 			case 'trust':
 				$items = array();
@@ -292,15 +316,21 @@ class StoryPhone_IM_Design {
 					}
 				}
 				return array(
-					'title' => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
-					'items' => $items,
+					'custom' => $custom_flag() || ! empty( $items ),
+					'title'  => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
+					'items'  => $items,
 				);
 			case 'cta':
+				$title = isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '';
+				$text  = isset( $row['text'] ) ? sanitize_textarea_field( $row['text'] ) : '';
+				$label = isset( $row['button_label'] ) ? sanitize_text_field( $row['button_label'] ) : '';
+				$url   = isset( $row['button_url'] ) ? esc_url_raw( $row['button_url'] ) : '';
 				return array(
-					'title'        => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
-					'text'         => isset( $row['text'] ) ? sanitize_textarea_field( $row['text'] ) : '',
-					'button_label' => isset( $row['button_label'] ) ? sanitize_text_field( $row['button_label'] ) : '',
-					'button_url'   => isset( $row['button_url'] ) ? esc_url_raw( $row['button_url'] ) : '',
+					'custom'       => $custom_flag() || '' !== $title || '' !== $text || '' !== $label || '' !== $url,
+					'title'        => $title,
+					'text'         => $text,
+					'button_label' => $label,
+					'button_url'   => $url,
 				);
 			case 'editor-content':
 			default:
@@ -526,8 +556,329 @@ class StoryPhone_IM_Design {
 						'items'       => $home['sections'],
 					),
 				),
-				'section_content' => $home['section_content'],
+				'section_content'  => $home['section_content'],
+				'section_preview'  => self::build_section_previews(),
 			)
+		);
+	}
+
+	/**
+	 * What each homepage section currently shows (for Design admin UI).
+	 *
+	 * Uses the same resolver as the storefront when available, so "Automatic"
+	 * sections list the real live items — not only saved custom IDs.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public static function build_section_previews() {
+		$defaults = self::default_section_content();
+		$preview  = array();
+
+		foreach ( array_keys( $defaults ) as $id ) {
+			$preview[ $id ] = array(
+				'source'   => 'auto',
+				'title'    => '',
+				'subtitle' => '',
+				'items'    => array(),
+				'note'     => '',
+			);
+		}
+
+		if ( ! class_exists( 'StoryPhone_IM_Storefront_Design' ) || ! class_exists( 'StoryPhone_Pages_Catalog' ) ) {
+			$content = self::get_all_section_content();
+			foreach ( $content as $id => $bag ) {
+				$preview[ $id ] = self::preview_from_content_bag( $id, $bag );
+			}
+			return $preview;
+		}
+
+		try {
+			$data    = StoryPhone_IM_Storefront_Design::resolve_home_data();
+			$content = isset( $data['section_content'] ) && is_array( $data['section_content'] ) ? $data['section_content'] : array();
+
+			$preview['hero'] = array(
+				'source'   => self::preview_source( $content, 'hero', 'chip_category_ids' ),
+				'title'    => isset( $content['hero']['title'] ) ? (string) $content['hero']['title'] : '',
+				'subtitle' => isset( $content['hero']['subtitle'] ) ? (string) $content['hero']['subtitle'] : '',
+				'items'    => self::terms_to_preview_items( isset( $data['chips'] ) ? $data['chips'] : array() ),
+				'note'     => __( 'Popular chips under search', 'storyphone-inventory-manager' ),
+			);
+
+			$preview['story-rail'] = array(
+				'source'   => self::preview_source( $content, 'story-rail', 'category_ids' ),
+				'title'    => isset( $content['story-rail']['title'] ) ? (string) $content['story-rail']['title'] : '',
+				'subtitle' => isset( $content['story-rail']['subtitle'] ) ? (string) $content['story-rail']['subtitle'] : '',
+				'items'    => self::stories_to_preview_items( isset( $data['stories'] ) ? $data['stories'] : array() ),
+				'note'     => __( 'Story bubbles', 'storyphone-inventory-manager' ),
+			);
+
+			$pick_items = self::products_to_preview_items(
+				! empty( $data['pick'] ) ? array( $data['pick'] ) : array()
+			);
+			if ( empty( $pick_items ) && class_exists( 'StoryPhone_Pages_Catalog' ) ) {
+				// Fallback so Design UI always shows the live automatic pick.
+				$fallback_hot = StoryPhone_Pages_Catalog::get_hot_products( 1 );
+				$pick_items   = self::products_to_preview_items( $fallback_hot );
+			}
+			$preview['pick-deck'] = array(
+				'source'   => ! empty( $content['pick-deck']['custom'] ) || ! empty( $content['pick-deck']['product_id'] ) ? 'custom' : 'auto',
+				'title'    => isset( $content['pick-deck']['title'] ) ? (string) $content['pick-deck']['title'] : '',
+				'subtitle' => isset( $content['pick-deck']['subtitle'] ) ? (string) $content['pick-deck']['subtitle'] : '',
+				'items'    => $pick_items,
+				'note'     => __( 'Featured pick card', 'storyphone-inventory-manager' ),
+			);
+
+			$preview['quick-reach'] = array(
+				'source'   => self::preview_source( $content, 'quick-reach', 'category_ids' ),
+				'title'    => isset( $content['quick-reach']['title'] ) ? (string) $content['quick-reach']['title'] : '',
+				'subtitle' => isset( $content['quick-reach']['subtitle'] ) ? (string) $content['quick-reach']['subtitle'] : '',
+				'items'    => self::terms_to_preview_items( isset( $data['families'] ) ? $data['families'] : array() ),
+				'note'     => __( 'Quick-reach category tiles', 'storyphone-inventory-manager' ),
+			);
+
+			$preview['heat-board'] = array(
+				'source'   => self::preview_source( $content, 'heat-board', 'product_ids' ),
+				'title'    => isset( $content['heat-board']['title'] ) ? (string) $content['heat-board']['title'] : '',
+				'subtitle' => isset( $content['heat-board']['subtitle'] ) ? (string) $content['heat-board']['subtitle'] : '',
+				'items'    => self::products_to_preview_items( isset( $data['hot'] ) ? $data['hot'] : array() ),
+				'note'     => __( 'Heat board products', 'storyphone-inventory-manager' ),
+			);
+
+			$preview['showcase'] = array(
+				'source'   => self::preview_source( $content, 'showcase', 'product_ids' ),
+				'title'    => isset( $content['showcase']['title'] ) ? (string) $content['showcase']['title'] : '',
+				'subtitle' => isset( $content['showcase']['subtitle'] ) ? (string) $content['showcase']['subtitle'] : '',
+				'items'    => self::products_to_preview_items( isset( $data['showcase'] ) ? $data['showcase'] : array() ),
+				'note'     => __( 'Showcase grid', 'storyphone-inventory-manager' ),
+			);
+
+			$deal_items = self::products_to_preview_items(
+				! empty( $data['deal'] ) ? array( $data['deal'] ) : array()
+			);
+			if ( empty( $deal_items ) && empty( $content['deal']['custom'] ) && class_exists( 'StoryPhone_Pages_Catalog' ) ) {
+				$fallback_deal = StoryPhone_Pages_Catalog::get_deal_product();
+				$deal_items    = self::products_to_preview_items(
+					$fallback_deal ? array( $fallback_deal ) : array()
+				);
+			}
+			$preview['deal'] = array(
+				'source'   => ! empty( $content['deal']['custom'] ) || ! empty( $content['deal']['product_id'] ) ? 'custom' : 'auto',
+				'title'    => '',
+				'subtitle' => '',
+				'items'    => $deal_items,
+				'note'     => __( 'Deal of the day', 'storyphone-inventory-manager' ),
+			);
+
+			$trust = isset( $content['trust'] ) ? $content['trust'] : array();
+			$trust_items = array();
+			if ( ! empty( $trust['items'] ) && is_array( $trust['items'] ) ) {
+				foreach ( $trust['items'] as $row ) {
+					if ( ! is_array( $row ) ) {
+						continue;
+					}
+					$t = isset( $row['title'] ) ? trim( (string) $row['title'] ) : '';
+					$x = isset( $row['text'] ) ? trim( (string) $row['text'] ) : '';
+					if ( '' === $t && '' === $x ) {
+						continue;
+					}
+					$trust_items[] = array(
+						'id'   => 0,
+						'name' => $t ? $t : $x,
+						'type' => 'text',
+					);
+				}
+			}
+			$preview['trust'] = array(
+				'source'   => ! empty( $trust_items ) ? 'custom' : 'auto',
+				'title'    => isset( $trust['title'] ) ? (string) $trust['title'] : '',
+				'subtitle' => '',
+				'items'    => $trust_items,
+				'note'     => ! empty( $trust_items )
+					? __( 'Custom trust items', 'storyphone-inventory-manager' )
+					: __( 'Default trust marquee', 'storyphone-inventory-manager' ),
+			);
+
+			$cta = isset( $content['cta'] ) ? $content['cta'] : array();
+			$cta_custom = ! empty( $cta['title'] ) || ! empty( $cta['text'] ) || ! empty( $cta['button_label'] ) || ! empty( $cta['button_url'] );
+			$cta_items  = array();
+			if ( ! empty( $cta['title'] ) ) {
+				$cta_items[] = array( 'id' => 0, 'name' => (string) $cta['title'], 'type' => 'text' );
+			} elseif ( ! $cta_custom ) {
+				$cta_items[] = array( 'id' => 0, 'name' => __( 'Default CTA copy', 'storyphone-inventory-manager' ), 'type' => 'text' );
+			}
+			if ( ! empty( $cta['button_label'] ) ) {
+				$cta_items[] = array( 'id' => 0, 'name' => (string) $cta['button_label'], 'type' => 'text' );
+			}
+			$preview['cta'] = array(
+				'source'   => $cta_custom ? 'custom' : 'auto',
+				'title'    => isset( $cta['title'] ) ? (string) $cta['title'] : '',
+				'subtitle' => isset( $cta['text'] ) ? (string) $cta['text'] : '',
+				'items'    => $cta_items,
+				'note'     => __( 'Closing call to action', 'storyphone-inventory-manager' ),
+			);
+
+			$preview['editor-content'] = array(
+				'source'   => 'auto',
+				'title'    => '',
+				'subtitle' => '',
+				'items'    => array(),
+				'note'     => __( 'WordPress page body (edit in WP editor)', 'storyphone-inventory-manager' ),
+			);
+		} catch ( \Throwable $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			$content = self::get_all_section_content();
+			foreach ( $content as $id => $bag ) {
+				$preview[ $id ] = self::preview_from_content_bag( $id, $bag );
+			}
+		}
+
+		return $preview;
+	}
+
+	/**
+	 * custom vs auto for a list field.
+	 *
+	 * @param array  $content Full section_content.
+	 * @param string $section Section id.
+	 * @param string $key     List key.
+	 * @return string
+	 */
+	private static function preview_source( $content, $section, $key ) {
+		$bag = isset( $content[ $section ] ) && is_array( $content[ $section ] ) ? $content[ $section ] : array();
+		if ( ! empty( $bag['custom'] ) ) {
+			return 'custom';
+		}
+		if ( empty( $bag[ $key ] ) ) {
+			return 'auto';
+		}
+		return is_array( $bag[ $key ] ) ? ( empty( $bag[ $key ] ) ? 'auto' : 'custom' ) : 'custom';
+	}
+
+	/**
+	 * @param WP_Term[] $terms Terms.
+	 * @return array<int, array{id:int,name:string,type:string}>
+	 */
+	private static function terms_to_preview_items( $terms ) {
+		$out = array();
+		foreach ( (array) $terms as $term ) {
+			if ( $term instanceof WP_Term ) {
+				$out[] = array(
+					'id'   => (int) $term->term_id,
+					'name' => $term->name,
+					'type' => 'category',
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @param WC_Product[] $products Products.
+	 * @return array<int, array{id:int,name:string,type:string}>
+	 */
+	private static function products_to_preview_items( $products ) {
+		$out = array();
+		foreach ( (array) $products as $product ) {
+			if ( $product instanceof WC_Product ) {
+				$out[] = array(
+					'id'   => (int) $product->get_id(),
+					'name' => $product->get_name(),
+					'type' => 'product',
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @param array $stories Story payloads.
+	 * @return array<int, array{id:int,name:string,type:string}>
+	 */
+	private static function stories_to_preview_items( $stories ) {
+		$out = array();
+		foreach ( (array) $stories as $story ) {
+			if ( ! is_array( $story ) || empty( $story['name'] ) ) {
+				continue;
+			}
+			$id = 0;
+			if ( ! empty( $story['id'] ) && preg_match( '/(\d+)/', (string) $story['id'], $m ) ) {
+				$id = (int) $m[1];
+			}
+			$out[] = array(
+				'id'   => $id,
+				'name' => (string) $story['name'],
+				'type' => 'category',
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * Fallback preview from saved IDs only (no storefront resolver).
+	 *
+	 * @param string $id  Section id.
+	 * @param array  $bag Content bag.
+	 * @return array<string, mixed>
+	 */
+	private static function preview_from_content_bag( $id, $bag ) {
+		$bag   = is_array( $bag ) ? $bag : array();
+		$items = array();
+		$source = 'auto';
+
+		$cat_keys = array( 'chip_category_ids', 'category_ids' );
+		foreach ( $cat_keys as $key ) {
+			if ( empty( $bag[ $key ] ) || ! is_array( $bag[ $key ] ) ) {
+				continue;
+			}
+			$source = 'custom';
+			foreach ( $bag[ $key ] as $term_id ) {
+				$term = get_term( absint( $term_id ), 'product_cat' );
+				if ( $term && ! is_wp_error( $term ) ) {
+					$items[] = array(
+						'id'   => (int) $term->term_id,
+						'name' => $term->name,
+						'type' => 'category',
+					);
+				}
+			}
+		}
+
+		if ( ! empty( $bag['product_ids'] ) && is_array( $bag['product_ids'] ) ) {
+			$source = 'custom';
+			foreach ( $bag['product_ids'] as $pid ) {
+				if ( ! function_exists( 'wc_get_product' ) ) {
+					break;
+				}
+				$product = wc_get_product( absint( $pid ) );
+				if ( $product instanceof WC_Product ) {
+					$items[] = array(
+						'id'   => (int) $product->get_id(),
+						'name' => $product->get_name(),
+						'type' => 'product',
+					);
+				}
+			}
+		}
+
+		if ( ! empty( $bag['product_id'] ) && function_exists( 'wc_get_product' ) ) {
+			$source  = 'custom';
+			$product = wc_get_product( absint( $bag['product_id'] ) );
+			if ( $product instanceof WC_Product ) {
+				$items[] = array(
+					'id'   => (int) $product->get_id(),
+					'name' => $product->get_name(),
+					'type' => 'product',
+				);
+			}
+		}
+
+		return array(
+			'source'   => $source,
+			'title'    => isset( $bag['title'] ) ? (string) $bag['title'] : '',
+			'subtitle' => isset( $bag['subtitle'] ) ? (string) $bag['subtitle'] : '',
+			'items'    => $items,
+			'note'     => 'custom' === $source
+				? __( 'Your saved selection', 'storyphone-inventory-manager' )
+				: __( 'Automatic (save custom picks to override)', 'storyphone-inventory-manager' ),
 		);
 	}
 
@@ -591,9 +942,15 @@ class StoryPhone_IM_Design {
 			$params = $request->get_params();
 		}
 
-		$nav_ids = array();
+		$previous = self::get_settings()['pages']['home'];
+
 		if ( isset( $params['nav_category_ids'] ) && is_array( $params['nav_category_ids'] ) ) {
-			$nav_ids = array_values( array_unique( array_filter( array_map( 'absint', $params['nav_category_ids'] ) ) ) );
+			$nav_ids    = array_values( array_unique( array_filter( array_map( 'absint', $params['nav_category_ids'] ) ) ) );
+			$nav_custom = true;
+		} else {
+			// Keep existing navbar when the client only updates sections / content.
+			$nav_ids    = isset( $previous['nav_category_ids'] ) ? $previous['nav_category_ids'] : array();
+			$nav_custom = ! empty( $previous['nav_custom'] ) || ! empty( $nav_ids );
 		}
 
 		$sections_in = isset( $params['sections'] ) && is_array( $params['sections'] ) ? $params['sections'] : array();
@@ -632,7 +989,11 @@ class StoryPhone_IM_Design {
 			$section_content = self::merge_section_content( $params['section_content'] );
 		} else {
 			// Keep previously saved content when client omits the field.
-			$section_content = self::get_settings()['pages']['home']['section_content'];
+			$section_content = $previous['section_content'];
+		}
+
+		if ( empty( $sections_in ) ) {
+			$sections = $previous['sections'];
 		}
 
 		// Persist explicitly — nav_custom means storefront must not use auto top-9.
@@ -640,7 +1001,7 @@ class StoryPhone_IM_Design {
 			'pages' => array(
 				'home' => array(
 					'nav_category_ids' => $nav_ids,
-					'nav_custom'       => true,
+					'nav_custom'       => $nav_custom,
 					'sections'         => $sections,
 					'section_content'  => $section_content,
 				),
@@ -656,7 +1017,16 @@ class StoryPhone_IM_Design {
 
 		// Verify write landed in DB (helps catch staging/object-cache mismatches).
 		$verify = self::read_option_fresh();
-		if ( ! is_array( $verify ) || empty( $verify['pages']['home']['nav_custom'] ) ) {
+		$verify_home = ( is_array( $verify ) && isset( $verify['pages']['home'] ) && is_array( $verify['pages']['home'] ) )
+			? $verify['pages']['home']
+			: array();
+		$verify_ok   = is_array( $verify )
+			&& (
+				! empty( $verify_home['nav_custom'] )
+				|| ! empty( $verify_home['nav_category_ids'] )
+				|| ! empty( $verify_home['section_content'] )
+			);
+		if ( ! $verify_ok ) {
 			// Force direct write if update_option was a no-op / cache lie.
 			global $wpdb;
 			$encoded = maybe_serialize( $payload );

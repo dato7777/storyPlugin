@@ -182,6 +182,19 @@ export function deleteProductImage(id, imageId) {
   });
 }
 
+export function attachProductImages(id, attachmentIds, { asFeatured = true } = {}) {
+  const ids = (Array.isArray(attachmentIds) ? attachmentIds : [attachmentIds])
+    .map(absInt)
+    .filter(Boolean);
+  return request(`products/${absInt(id)}/image/attach`, {
+    method: 'POST',
+    body: JSON.stringify({
+      attachment_ids: ids,
+      as_featured: asFeatured,
+    }),
+  });
+}
+
 export function uploadMedia(file) {
   const form = new FormData();
   form.append('image', file);

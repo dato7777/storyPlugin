@@ -178,6 +178,22 @@ class StoryPhone_IM_REST_Controller {
 
 		register_rest_route(
 			self::NAMESPACE,
+			'/products/(?P<id>\d+)/image/attach',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'attach_product_images' ),
+				'permission_callback' => array( __CLASS__, 'check_permissions' ),
+				'args'                => array(
+					'id' => array(
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
 			'/media',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -341,8 +357,10 @@ class StoryPhone_IM_REST_Controller {
 			}
 		}
 
+		$title_filter = null;
 		if ( '' !== $search ) {
-			$query_args['s'] = $search;
+			// Prefer title AND-word match over WC loose `s` search.
+			$title_filter = self::attach_title_and_search_filter( $search );
 		}
 
 		if ( $category > 0 ) {
@@ -354,6 +372,10 @@ class StoryPhone_IM_REST_Controller {
 
 		$results = new WC_Product_Query( $query_args );
 		$query   = $results->get_products();
+
+		if ( $title_filter ) {
+			remove_filter( 'posts_where', $title_filter, 10 );
+		}
 
 		$products = array();
 		if ( ! empty( $query->products ) ) {
@@ -381,6 +403,77 @@ class StoryPhone_IM_REST_Controller {
 	 */
 	private static function inventory_statuses() {
 		return array( 'publish', 'draft', 'private', 'pending' );
+	}
+
+	/**
+	 * Split a search string into significant words.
+	 *
+	 * @param string $search Search string.
+	 * @return string[]
+	 */
+	private static function search_tokens( $search ) {
+		$search = trim( preg_replace( '/\s+/u', ' ', (string) $search ) );
+		if ( '' === $search ) {
+			return array();
+		}
+		$parts = preg_split( '/\s+/u', $search );
+		if ( ! is_array( $parts ) ) {
+			return array();
+		}
+		return array_values( array_filter( $parts, 'strlen' ) );
+	}
+
+	/**
+	 * True when every search word appears in the product name (AND match).
+	 *
+	 * @param string $name   Product name.
+	 * @param string $search Search string.
+	 * @return bool
+	 */
+	private static function product_name_matches_all_words( $name, $search ) {
+		$tokens = self::search_tokens( $search );
+		if ( empty( $tokens ) ) {
+			return true;
+		}
+		$hay = function_exists( 'mb_strtolower' ) ? mb_strtolower( (string) $name ) : strtolower( (string) $name );
+		foreach ( $tokens as $token ) {
+			$needle = function_exists( 'mb_strtolower' ) ? mb_strtolower( $token ) : strtolower( $token );
+			if ( '' === $needle ) {
+				continue;
+			}
+			if ( false === strpos( $hay, $needle ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Attach posts_where clauses so every search token must appear in post_title.
+	 * Returns the callback so the caller can remove_filter after the query.
+	 *
+	 * @param string $search Search string.
+	 * @return callable|null
+	 */
+	private static function attach_title_and_search_filter( $search ) {
+		$tokens = self::search_tokens( $search );
+		if ( empty( $tokens ) ) {
+			return null;
+		}
+
+		$callback = static function ( $where ) use ( $tokens ) {
+			global $wpdb;
+			foreach ( $tokens as $token ) {
+				$where .= $wpdb->prepare(
+					" AND {$wpdb->posts}.post_title LIKE %s",
+					'%' . $wpdb->esc_like( $token ) . '%'
+				);
+			}
+			return $where;
+		};
+
+		add_filter( 'posts_where', $callback, 10, 1 );
+		return $callback;
 	}
 
 	/**
@@ -423,10 +516,6 @@ class StoryPhone_IM_REST_Controller {
 			'update_post_term_cache' => false,
 		);
 
-		if ( '' !== $search ) {
-			$args['s'] = $search;
-		}
-
 		if ( $category > 0 ) {
 			$args['tax_query'] = array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
 				array(
@@ -437,7 +526,12 @@ class StoryPhone_IM_REST_Controller {
 			);
 		}
 
-		$query    = new WP_Query( $args );
+		$title_filter = self::attach_title_and_search_filter( $search );
+		$query        = new WP_Query( $args );
+		if ( $title_filter ) {
+			remove_filter( 'posts_where', $title_filter, 10 );
+		}
+
 		$products = array();
 
 		foreach ( (array) $query->posts as $product_id ) {
@@ -487,10 +581,6 @@ class StoryPhone_IM_REST_Controller {
 			'order'        => 'DESC',
 		);
 
-		if ( '' !== $search ) {
-			$base['s'] = $search;
-		}
-
 		if ( $category > 0 ) {
 			$term = get_term( $category, 'product_cat' );
 			if ( $term && ! is_wp_error( $term ) ) {
@@ -498,8 +588,12 @@ class StoryPhone_IM_REST_Controller {
 			}
 		}
 
-		$query = new WC_Product_Query( $base );
-		$ids   = $query->get_products();
+		$title_filter = self::attach_title_and_search_filter( $search );
+		$query        = new WC_Product_Query( $base );
+		$ids          = $query->get_products();
+		if ( $title_filter ) {
+			remove_filter( 'posts_where', $title_filter, 10 );
+		}
 		if ( ! is_array( $ids ) ) {
 			$ids = array();
 		}
@@ -511,6 +605,9 @@ class StoryPhone_IM_REST_Controller {
 				continue;
 			}
 			if ( $stock_status !== $product->get_stock_status() ) {
+				continue;
+			}
+			if ( '' !== $search && ! self::product_name_matches_all_words( $product->get_name(), $search ) ) {
 				continue;
 			}
 			$enabled_ids[] = (int) $product_id;
@@ -624,16 +721,14 @@ class StoryPhone_IM_REST_Controller {
 			'order'  => 'DESC',
 		);
 
-		if ( '' !== $search ) {
-			$base['s'] = $search;
-		}
-
 		if ( $category > 0 ) {
 			$term = get_term( $category, 'product_cat' );
 			if ( $term && ! is_wp_error( $term ) ) {
 				$base['category'] = array( $term->slug );
 			}
 		}
+
+		$title_filter = self::attach_title_and_search_filter( $search );
 
 		$hidden_query = new WC_Product_Query(
 			array_merge(
@@ -662,8 +757,25 @@ class StoryPhone_IM_REST_Controller {
 			$draft_ids = array();
 		}
 
+		if ( $title_filter ) {
+			remove_filter( 'posts_where', $title_filter, 10 );
+		}
+
 		$ids = array_unique( array_map( 'absint', array_merge( $hidden_ids, $draft_ids ) ) );
-		return array_values( array_filter( $ids ) );
+		$ids = array_values( array_filter( $ids ) );
+
+		if ( '' === $search ) {
+			return $ids;
+		}
+
+		$matched = array();
+		foreach ( $ids as $product_id ) {
+			$product = wc_get_product( $product_id );
+			if ( $product && self::product_name_matches_all_words( $product->get_name(), $search ) ) {
+				$matched[] = (int) $product_id;
+			}
+		}
+		return $matched;
 	}
 
 	/**
@@ -1304,6 +1416,154 @@ class StoryPhone_IM_REST_Controller {
 				'product'   => self::format_product_detail( $product ),
 			)
 		);
+	}
+
+	/**
+	 * POST /products/{id}/image/attach — attach existing Media Library images.
+	 *
+	 * Body JSON: { attachment_ids: int[], as_featured?: bool }
+	 * First ID becomes featured when as_featured is true or product has no image.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function attach_product_images( $request ) {
+		$rate = StoryPhone_IM_Audit_Log::check_rate_limit();
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$product = self::get_wc_product( absint( $request['id'] ) );
+		if ( is_wp_error( $product ) ) {
+			return $product;
+		}
+
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) ) {
+			$params = $request->get_params();
+		}
+
+		$ids = array();
+		if ( isset( $params['attachment_ids'] ) && is_array( $params['attachment_ids'] ) ) {
+			$ids = array_values( array_unique( array_filter( array_map( 'absint', $params['attachment_ids'] ) ) ) );
+		} elseif ( ! empty( $params['attachment_id'] ) ) {
+			$ids = array( absint( $params['attachment_id'] ) );
+		}
+
+		if ( empty( $ids ) ) {
+			return new WP_Error(
+				'storyphone_im_missing_attachment',
+				__( 'Provide attachment_ids from the Media Library.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$as_featured = true;
+		if ( array_key_exists( 'as_featured', $params ) ) {
+			$as_featured = filter_var( $params['as_featured'], FILTER_VALIDATE_BOOLEAN );
+		}
+
+		$applied = array();
+		foreach ( $ids as $index => $attach_id ) {
+			if ( ! wp_attachment_is_image( $attach_id ) ) {
+				continue;
+			}
+			$make_featured = ( 0 === $index && ( $as_featured || (int) $product->get_image_id() < 1 ) );
+			$result        = self::apply_attachment_to_product( $product, $attach_id, $make_featured );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$product   = $result;
+			$applied[] = (int) $attach_id;
+		}
+
+		if ( empty( $applied ) ) {
+			return new WP_Error(
+				'storyphone_im_invalid_attachment',
+				__( 'None of the selected Media Library items are valid images.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		StoryPhone_IM_Audit_Log::log(
+			'attach_image',
+			$product->get_id(),
+			array(
+				'image_ids' => implode( ',', $applied ),
+			)
+		);
+
+		$product = wc_get_product( $product->get_id() );
+		$first   = (int) $applied[0];
+		$url     = wp_get_attachment_image_url( $first, 'medium' );
+		if ( ! $url ) {
+			$url = wp_get_attachment_url( $first );
+		}
+
+		return rest_ensure_response(
+			array(
+				'success'         => true,
+				'image_id'        => $first,
+				'image_url'       => esc_url_raw( $url ? $url : '' ),
+				'attachment_ids'  => $applied,
+				'product'         => self::format_product_detail( $product ),
+			)
+		);
+	}
+
+	/**
+	 * Add an attachment as featured or gallery image on a product.
+	 *
+	 * @param WC_Product $product     Product.
+	 * @param int        $attach_id   Attachment ID.
+	 * @param bool       $as_featured Whether to set as featured.
+	 * @return WC_Product|WP_Error
+	 */
+	private static function apply_attachment_to_product( $product, $attach_id, $as_featured ) {
+		$attach_id = absint( $attach_id );
+		if ( $attach_id < 1 || ! wp_attachment_is_image( $attach_id ) ) {
+			return new WP_Error(
+				'storyphone_im_invalid_attachment',
+				__( 'Invalid Media Library image.', 'storyphone-inventory-manager' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$current_featured = (int) $product->get_image_id();
+		$gallery          = array_map( 'absint', $product->get_gallery_image_ids() );
+
+		if ( $as_featured || $current_featured < 1 ) {
+			if ( $current_featured > 0 && $current_featured !== $attach_id ) {
+				$gallery[] = $current_featured;
+			}
+			$gallery = array_values(
+				array_filter(
+					array_unique( $gallery ),
+					static function ( $gid ) use ( $attach_id ) {
+						return (int) $gid > 0 && (int) $gid !== (int) $attach_id;
+					}
+				)
+			);
+			$product->set_image_id( $attach_id );
+			$product->set_gallery_image_ids( $gallery );
+		} else {
+			if ( $attach_id === $current_featured || in_array( $attach_id, $gallery, true ) ) {
+				return $product;
+			}
+			$gallery[] = $attach_id;
+			$gallery   = array_values(
+				array_filter(
+					array_unique( $gallery ),
+					static function ( $gid ) use ( $current_featured ) {
+						return (int) $gid > 0 && (int) $gid !== $current_featured;
+					}
+				)
+			);
+			$product->set_gallery_image_ids( $gallery );
+		}
+
+		$product->save();
+		return self::persist_product_image_meta( $product );
 	}
 
 	/**

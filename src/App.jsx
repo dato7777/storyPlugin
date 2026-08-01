@@ -15,8 +15,10 @@ import {
   updateProduct,
   uploadMedia,
   uploadProductImage,
+  attachProductImages,
   deleteProductImage,
 } from './api.js';
+import { openMediaLibrary } from './lib/mediaLibrary.js';
 import {
   CATEGORY_ICON_SIZES,
   flattenCategoriesForSelect,
@@ -26,8 +28,8 @@ import BulkBar from './components/BulkBar.jsx';
 import CategoryNav from './components/CategoryNav.jsx';
 import CategoryTreeView from './components/CategoryTreeView.jsx';
 import DesignStudio from './components/DesignStudio.jsx';
-import { IconSearch } from './components/NavIcons.jsx';
 import ProductList from './components/ProductList.jsx';
+import SearchField from './components/SearchField.jsx';
 import ProductEditPanel from './components/ProductEditPanel.jsx';
 import QuantityStepper from './components/QuantityStepper.jsx';
 import RichTextEditor from './components/RichTextEditor.jsx';
@@ -45,6 +47,8 @@ const emptyCreateForm = {
   enabled: true,
   category_ids: [],
   imageFile: null,
+  imageLibraryId: 0,
+  imageLibraryUrl: '',
 };
 
 const COLLECTION_TITLES = {
@@ -78,6 +82,7 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmTrash, setConfirmTrash] = useState(null);
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
@@ -305,20 +310,27 @@ export default function App() {
     }
   }
 
-  async function handleSave(payload, pendingFiles = []) {
+  async function handleSave(payload, pending = {}) {
     if (!selectedId) return;
     setSaving(true);
     try {
       await updateProduct(selectedId, payload);
-      const files = Array.isArray(pendingFiles)
-        ? pendingFiles
-        : pendingFiles
-          ? [pendingFiles]
+      const files = Array.isArray(pending.files)
+        ? pending.files
+        : Array.isArray(pending)
+          ? pending
           : [];
+      const libraryIds = Array.isArray(pending.libraryIds) ? pending.libraryIds : [];
+      let featuredSet = Boolean(payload.image_id);
       for (let i = 0; i < files.length; i += 1) {
-        // First upload becomes featured if product had none; later ones join gallery.
         await uploadProductImage(selectedId, files[i], {
-          asFeatured: i === 0 && !payload.image_id,
+          asFeatured: !featuredSet && i === 0,
+        });
+        featuredSet = true;
+      }
+      if (libraryIds.length) {
+        await attachProductImages(selectedId, libraryIds, {
+          asFeatured: !featuredSet,
         });
       }
       showToast('Product saved');
@@ -328,22 +340,6 @@ export default function App() {
     } catch (err) {
       showToast(err.message || 'Save failed', 'error');
       throw err;
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleUploadImage(file, asFeatured = true) {
-    if (!selectedId) return;
-    setSaving(true);
-    try {
-      const result = await uploadProductImage(selectedId, file, { asFeatured });
-      if (result.product) setSelectedProduct(result.product);
-      else await refreshSelectedProduct();
-      showToast('Image uploaded');
-      await loadProducts();
-    } catch (err) {
-      showToast(err.message || 'Image upload failed', 'error');
     } finally {
       setSaving(false);
     }
@@ -414,8 +410,14 @@ export default function App() {
         stock_status: createForm.stock_status,
         enabled: createForm.enabled,
       });
-      if (createForm.imageFile && result.product?.id) {
-        await uploadProductImage(result.product.id, createForm.imageFile);
+      if (result.product?.id) {
+        if (createForm.imageFile) {
+          await uploadProductImage(result.product.id, createForm.imageFile);
+        } else if (createForm.imageLibraryId) {
+          await attachProductImages(result.product.id, [createForm.imageLibraryId], {
+            asFeatured: true,
+          });
+        }
       }
       showToast('Product created');
       setCreateOpen(false);
@@ -689,39 +691,19 @@ export default function App() {
                 </div>
               ) : null}
             </div>
-            {showProductToolbar ? (
-              <div className="sp-content-actions">
-                <div className="sp-search-wrap">
-                  <span className="sp-search-icon" aria-hidden="true">
-                    <IconSearch />
-                  </span>
-                  <input
-                    type="text"
-                    className="sp-search"
-                    placeholder={`Search ${headerTitle}…`}
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    aria-label="Search products"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  {searchInput ? (
-                    <button
-                      type="button"
-                      className="sp-search-clear"
-                      aria-label="Clear search"
-                      onClick={() => setSearchInput('')}
-                    >
-                      <span aria-hidden="true">✕</span>
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
           </header>
 
           {showProductToolbar ? (
             <div className="sp-product-toolbar">
+              <SearchField
+                value={searchInput}
+                onChange={setSearchInput}
+                onSearch={(q) => {
+                  setPage(1);
+                  setSearch(q);
+                }}
+                placeholder="Search anything"
+              />
               <div className="sp-content-meta sp-content-meta-inline">
                 <span>{loading ? 'Loading…' : `${total} item${total === 1 ? '' : 's'}`}</span>
               </div>
@@ -817,14 +799,18 @@ export default function App() {
         onClose={closePanel}
         onSave={handleSave}
         onRequestDelete={(product) => setConfirmTrash(product)}
-        onUploadImage={handleUploadImage}
         onDeleteImage={handleDeleteImage}
         onSetFeaturedImage={handleSetFeaturedImage}
       />
 
       {createOpen &&
         createPortal(
-          <div className="sp-modal-backdrop" onClick={() => !saving && setCreateOpen(false)}>
+          <div
+            className="sp-modal-backdrop"
+            onClick={() => {
+              if (!saving && !mediaPickerOpen) setCreateOpen(false);
+            }}
+          >
             <div
               className="sp-modal sp-modal-lg"
               role="dialog"
@@ -897,19 +883,90 @@ export default function App() {
                       ))}
                     </select>
                   </label>
-                  <label>
-                    Image
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          imageFile: e.target.files?.[0] || null,
-                        }))
-                      }
-                    />
-                  </label>
+                  <div>
+                    <span className="sp-label">Image</span>
+                    <div className="sp-image-source-row">
+                      <label className="sp-btn sp-btn-ghost sp-file-label">
+                        Local
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/gif,image/webp"
+                          hidden
+                          onChange={(e) =>
+                            setCreateForm((f) => ({
+                              ...f,
+                              imageFile: e.target.files?.[0] || null,
+                              imageLibraryId: 0,
+                              imageLibraryUrl: '',
+                            }))
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="sp-btn sp-btn-ghost"
+                        disabled={saving || mediaPickerOpen}
+                        onClick={async () => {
+                          try {
+                            const picked = await openMediaLibrary({
+                              multiple: false,
+                              title: 'Select image from Media Library',
+                              buttonText: 'Use image',
+                              onOpen: () => setMediaPickerOpen(true),
+                              onClose: () => setMediaPickerOpen(false),
+                            });
+                            setMediaPickerOpen(false);
+                            if (!picked[0]) return;
+                            setCreateForm((f) => ({
+                              ...f,
+                              imageFile: null,
+                              imageLibraryId: picked[0].id,
+                              imageLibraryUrl: picked[0].url,
+                            }));
+                          } catch (err) {
+                            setMediaPickerOpen(false);
+                            showToast(err.message || 'Could not open Media Library', 'error');
+                          }
+                        }}
+                      >
+                        Library
+                      </button>
+                    </div>
+                    <p className="sp-help">
+                      <strong>Local</strong> = from this computer. <strong>Library</strong> = WordPress
+                      Media Library (opens over this window). Image applies when you create the item.
+                    </p>
+                    {createForm.imageFile ? (
+                      <div className="sp-image-preview" style={{ marginTop: 8 }}>
+                        <img src={URL.createObjectURL(createForm.imageFile)} alt="" />
+                        <button
+                          type="button"
+                          className="sp-btn sp-btn-ghost sp-btn-sm"
+                          onClick={() => setCreateForm((f) => ({ ...f, imageFile: null }))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : null}
+                    {createForm.imageLibraryUrl ? (
+                      <div className="sp-image-preview" style={{ marginTop: 8 }}>
+                        <img src={createForm.imageLibraryUrl} alt="" />
+                        <button
+                          type="button"
+                          className="sp-btn sp-btn-ghost sp-btn-sm"
+                          onClick={() =>
+                            setCreateForm((f) => ({
+                              ...f,
+                              imageLibraryId: 0,
+                              imageLibraryUrl: '',
+                            }))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="sp-card-block">

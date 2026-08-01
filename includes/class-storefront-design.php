@@ -192,58 +192,76 @@ class StoryPhone_IM_Storefront_Design {
 			: array();
 
 		$hero = isset( $content['hero'] ) && is_array( $content['hero'] ) ? $content['hero'] : array();
-		if ( ! empty( $hero['chip_category_ids'] ) ) {
-			$custom_chips = self::resolve_categories_by_ids( $hero['chip_category_ids'], 8 );
-			if ( ! empty( $custom_chips ) ) {
-				$chips = $custom_chips;
-			}
+		if ( self::section_is_custom( $hero, 'chip_category_ids' ) ) {
+			// Honor deletions: custom list wins even when empty.
+			$chips = self::resolve_categories_by_ids(
+				isset( $hero['chip_category_ids'] ) ? $hero['chip_category_ids'] : array(),
+				8
+			);
 		}
 
 		$story_c = isset( $content['story-rail'] ) && is_array( $content['story-rail'] ) ? $content['story-rail'] : array();
-		if ( ! empty( $story_c['category_ids'] ) ) {
-			$custom_stories = self::resolve_stories_from_category_ids( $story_c['category_ids'], 6 );
-			if ( ! empty( $custom_stories ) ) {
-				$stories = $custom_stories;
-			}
+		if ( self::section_is_custom( $story_c, 'category_ids' ) ) {
+			$stories = self::resolve_stories_from_category_ids(
+				isset( $story_c['category_ids'] ) ? $story_c['category_ids'] : array(),
+				6
+			);
 		}
 
 		$pick_c = isset( $content['pick-deck'] ) && is_array( $content['pick-deck'] ) ? $content['pick-deck'] : array();
-		if ( ! empty( $pick_c['product_id'] ) ) {
-			$custom_pick = self::resolve_product_by_id( $pick_c['product_id'] );
-			if ( $custom_pick ) {
-				$pick = $custom_pick;
+		if ( self::section_is_custom( $pick_c, 'product_id' ) ) {
+			if ( ! empty( $pick_c['product_id'] ) ) {
+				$resolved_pick = self::resolve_product_by_id( $pick_c['product_id'] );
+				// Keep prior auto pick if the ID is invalid — never blank the whole section.
+				if ( $resolved_pick ) {
+					$pick = $resolved_pick;
+				}
+			} else {
+				$pick = null;
 			}
 		}
 
 		$reach_c = isset( $content['quick-reach'] ) && is_array( $content['quick-reach'] ) ? $content['quick-reach'] : array();
-		if ( ! empty( $reach_c['category_ids'] ) ) {
-			$custom_families = self::resolve_categories_by_ids( $reach_c['category_ids'], 12 );
-			if ( ! empty( $custom_families ) ) {
-				$families = $custom_families;
-			}
+		if ( self::section_is_custom( $reach_c, 'category_ids' ) ) {
+			$ids = isset( $reach_c['category_ids'] ) ? $reach_c['category_ids'] : array();
+			$families = self::resolve_categories_by_ids( $ids, 12 );
 		}
 
 		$heat_c = isset( $content['heat-board'] ) && is_array( $content['heat-board'] ) ? $content['heat-board'] : array();
-		if ( ! empty( $heat_c['product_ids'] ) ) {
-			$custom_hot = self::resolve_products_by_ids( $heat_c['product_ids'], 12 );
-			if ( ! empty( $custom_hot ) ) {
-				$hot = $custom_hot;
+		if ( self::section_is_custom( $heat_c, 'product_ids' ) ) {
+			$ids = isset( $heat_c['product_ids'] ) ? $heat_c['product_ids'] : array();
+			if ( empty( $ids ) ) {
+				$hot = array();
+			} else {
+				$resolved_hot = self::resolve_products_by_ids( $ids, 12 );
+				if ( ! empty( $resolved_hot ) ) {
+					$hot = $resolved_hot;
+				}
 			}
 		}
 
 		$show_c = isset( $content['showcase'] ) && is_array( $content['showcase'] ) ? $content['showcase'] : array();
-		if ( ! empty( $show_c['product_ids'] ) ) {
-			$custom_show = self::resolve_products_by_ids( $show_c['product_ids'], 12 );
-			if ( ! empty( $custom_show ) ) {
-				$showcase = $custom_show;
+		if ( self::section_is_custom( $show_c, 'product_ids' ) ) {
+			$ids = isset( $show_c['product_ids'] ) ? $show_c['product_ids'] : array();
+			if ( empty( $ids ) ) {
+				$showcase = array();
+			} else {
+				$resolved_show = self::resolve_products_by_ids( $ids, 12 );
+				if ( ! empty( $resolved_show ) ) {
+					$showcase = $resolved_show;
+				}
 			}
 		}
 
 		$deal_c = isset( $content['deal'] ) && is_array( $content['deal'] ) ? $content['deal'] : array();
-		if ( ! empty( $deal_c['product_id'] ) ) {
-			$custom_deal = self::resolve_product_by_id( $deal_c['product_id'] );
-			if ( $custom_deal ) {
-				$deal = $custom_deal;
+		if ( self::section_is_custom( $deal_c, 'product_id' ) ) {
+			if ( ! empty( $deal_c['product_id'] ) ) {
+				$resolved_deal = self::resolve_product_by_id( $deal_c['product_id'] );
+				if ( $resolved_deal ) {
+					$deal = $resolved_deal;
+				}
+			} else {
+				$deal = null;
 			}
 		}
 
@@ -282,7 +300,52 @@ class StoryPhone_IM_Storefront_Design {
 	}
 
 	/**
-	 * Visible WC product by ID (Catalog helper or local fallback).
+	 * Whether a section content bag is locked to a custom selection.
+	 *
+	 * @param array  $bag Content bag.
+	 * @param string $key ID list / product key.
+	 * @return bool
+	 */
+	private static function section_is_custom( $bag, $key = '' ) {
+		if ( ! is_array( $bag ) ) {
+			return false;
+		}
+		if ( ! empty( $bag['custom'] ) ) {
+			return true;
+		}
+		if ( '' === $key || ! isset( $bag[ $key ] ) ) {
+			return false;
+		}
+		if ( is_array( $bag[ $key ] ) ) {
+			return ! empty( $bag[ $key ] );
+		}
+		return absint( $bag[ $key ] ) > 0;
+	}
+
+	/**
+	 * Render a homepage part from IM overrides when present (Design-aware).
+	 *
+	 * @param string               $name Part slug.
+	 * @param array<string, mixed> $args Template args.
+	 * @return void
+	 */
+	public static function part( $name, array $args = array() ) {
+		$name = sanitize_file_name( $name );
+		$path = STORYPHONE_IM_PLUGIN_DIR . 'templates/parts/' . $name . '.php';
+		if ( file_exists( $path ) ) {
+			include $path;
+			return;
+		}
+		if ( class_exists( 'StoryPhone_Pages_Render' ) ) {
+			StoryPhone_Pages_Render::part( $name, $args );
+		}
+	}
+
+	/**
+	 * Published product by ID for Design curation.
+	 *
+	 * Does not use WooCommerce is_visible() — out-of-stock / catalog-hidden
+	 * products still render when an admin picks them in Design.
 	 *
 	 * @param int $id Product ID.
 	 * @return WC_Product|null
@@ -293,31 +356,25 @@ class StoryPhone_IM_Storefront_Design {
 			return null;
 		}
 
-		if ( method_exists( 'StoryPhone_Pages_Catalog', 'get_product_by_id' ) ) {
-			$product = StoryPhone_Pages_Catalog::get_product_by_id( $id );
-			return $product instanceof WC_Product ? $product : null;
-		}
-
 		$product = wc_get_product( $id );
-		if ( $product instanceof WC_Product && $product->is_visible() ) {
-			return $product;
+		if ( ! $product instanceof WC_Product ) {
+			return null;
+		}
+		if ( 'publish' !== $product->get_status() ) {
+			return null;
 		}
 
-		return null;
+		return $product;
 	}
 
 	/**
-	 * Visible products by IDs (Catalog helper or local fallback).
+	 * Published products by IDs (order preserved) for Design curation.
 	 *
 	 * @param int[] $ids   Product IDs.
 	 * @param int   $limit Max.
 	 * @return WC_Product[]
 	 */
 	private static function resolve_products_by_ids( array $ids, $limit = 12 ) {
-		if ( method_exists( 'StoryPhone_Pages_Catalog', 'get_products_by_ids' ) ) {
-			return StoryPhone_Pages_Catalog::get_products_by_ids( $ids, $limit );
-		}
-
 		$limit = max( 1, absint( $limit ) );
 		$out   = array();
 		foreach ( array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) ) as $id ) {
@@ -370,8 +427,65 @@ class StoryPhone_IM_Storefront_Design {
 			return StoryPhone_Pages_Stories::build_from_category_ids( $category_ids, $per_story );
 		}
 
-		// Outdated pages plugin: keep auto stories rather than fatal.
-		return array();
+		// Local fallback so Design deletions apply even on older pages plugins.
+		$terms = self::resolve_categories_by_ids( $category_ids, 12 );
+		if ( empty( $terms ) || ! class_exists( 'StoryPhone_Pages_Catalog' ) ) {
+			return array();
+		}
+
+		$per_story = max( 1, absint( $per_story ) );
+		$stories   = array();
+		foreach ( $terms as $term ) {
+			if ( ! $term instanceof WP_Term ) {
+				continue;
+			}
+			$products = method_exists( 'StoryPhone_Pages_Catalog', 'get_category_products' )
+				? StoryPhone_Pages_Catalog::get_category_products( $term, $per_story )
+				: array();
+			if ( empty( $products ) ) {
+				continue;
+			}
+			$term_link = get_term_link( $term );
+			$cover     = method_exists( 'StoryPhone_Pages_Catalog', 'get_category_image' )
+				? StoryPhone_Pages_Catalog::get_category_image( $term )
+				: '';
+			if ( '' === $cover && method_exists( 'StoryPhone_Pages_Catalog', 'get_product_image_url' ) ) {
+				$cover = StoryPhone_Pages_Catalog::get_product_image_url( $products[0] );
+			}
+			$items = array();
+			foreach ( $products as $product ) {
+				if ( ! $product instanceof WC_Product ) {
+					continue;
+				}
+				$permalink = get_permalink( $product->get_id() );
+				$image     = method_exists( 'StoryPhone_Pages_Catalog', 'get_product_image_url' )
+					? StoryPhone_Pages_Catalog::get_product_image_url( $product, 'woocommerce_single' )
+					: '';
+				$items[]   = array(
+					'id'        => $product->get_id(),
+					'name'      => $product->get_name(),
+					'url'       => $permalink ? $permalink : home_url( '/' ),
+					'image'     => $image,
+					'priceHtml' => wp_kses_post( $product->get_price_html() ),
+					'canAdd'    => method_exists( 'StoryPhone_Pages_Catalog', 'supports_quick_add' )
+						? StoryPhone_Pages_Catalog::supports_quick_add( $product )
+						: false,
+					'inStock'   => $product->is_in_stock(),
+					'discount'  => class_exists( 'StoryPhone_Pages_Render' )
+						? StoryPhone_Pages_Render::get_discount_percent( $product )
+						: 0,
+				);
+			}
+			$stories[] = array(
+				'id'    => 'cat-' . (int) $term->term_id,
+				'name'  => $term->name,
+				'url'   => is_wp_error( $term_link ) ? home_url( '/' ) : $term_link,
+				'cover' => $cover,
+				'count' => (int) $term->count,
+				'items' => $items,
+			);
+		}
+		return $stories;
 	}
 
 	/**

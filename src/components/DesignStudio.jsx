@@ -13,17 +13,28 @@ function moveItem(list, index, dir) {
 }
 
 const EMPTY_SECTION_CONTENT = {
-  hero: { chip_category_ids: [], title: '', subtitle: '' },
-  'story-rail': { category_ids: [], title: '', subtitle: '' },
-  'pick-deck': { product_id: 0, title: '', subtitle: '' },
-  'quick-reach': { category_ids: [], title: '', subtitle: '' },
-  'heat-board': { product_ids: [], title: '', subtitle: '' },
-  showcase: { product_ids: [], title: '', subtitle: '' },
-  deal: { product_id: 0 },
-  trust: { title: '', items: [] },
+  hero: { custom: false, chip_category_ids: [], title: '', subtitle: '' },
+  'story-rail': { custom: false, category_ids: [], title: '', subtitle: '' },
+  'pick-deck': { custom: false, product_id: 0, title: '', subtitle: '' },
+  'quick-reach': { custom: false, category_ids: [], title: '', subtitle: '' },
+  'heat-board': { custom: false, product_ids: [], title: '', subtitle: '' },
+  showcase: { custom: false, product_ids: [], title: '', subtitle: '' },
+  deal: { custom: false, product_id: 0 },
+  trust: { custom: false, title: '', items: [] },
   'editor-content': { note: '' },
-  cta: { title: '', text: '', button_label: '', button_url: '' },
+  cta: { custom: false, title: '', text: '', button_label: '', button_url: '' },
 };
+
+function mergeSectionContent(saved) {
+  const out = {};
+  Object.keys(EMPTY_SECTION_CONTENT).forEach((key) => {
+    out[key] = {
+      ...EMPTY_SECTION_CONTENT[key],
+      ...(saved && typeof saved[key] === 'object' && saved[key] ? saved[key] : {}),
+    };
+  });
+  return out;
+}
 
 export default function DesignStudio({ showToast }) {
   const [pages, setPages] = useState([]);
@@ -33,6 +44,7 @@ export default function DesignStudio({ showToast }) {
   const [navItems, setNavItems] = useState([]);
   const [sections, setSections] = useState([]);
   const [sectionContent, setSectionContent] = useState(EMPTY_SECTION_CONTENT);
+  const [sectionPreview, setSectionPreview] = useState({});
   const [expandedSection, setExpandedSection] = useState(null);
   const [categories, setCategories] = useState([]);
   const [productsById, setProductsById] = useState({});
@@ -69,13 +81,18 @@ export default function DesignStudio({ showToast }) {
       try {
         const [catData, prodData] = await Promise.all([
           fetchCategories(),
-          fetchProducts({ page: 1, perPage: 100, collection: 'all' }),
+          // Design pickers: only active, in-stock catalog items.
+          fetchProducts({ page: 1, perPage: 250, collection: 'instock' }),
         ]);
         if (cancelled) return;
         setCategories(catData.categories || []);
         const map = {};
         (prodData.products || []).forEach((p) => {
-          map[p.id] = p;
+          const enabled = p.enabled !== false;
+          const inStock = (p.stock_status || 'instock') === 'instock';
+          if (enabled && inStock) {
+            map[p.id] = p;
+          }
         });
         setProductsById(map);
       } catch {
@@ -95,6 +112,7 @@ export default function DesignStudio({ showToast }) {
       setNavItems([]);
       setSections([]);
       setSectionContent(EMPTY_SECTION_CONTENT);
+      setSectionPreview({});
       return;
     }
 
@@ -109,10 +127,8 @@ export default function DesignStudio({ showToast }) {
         const secBlock = (data.blocks || []).find((b) => b.type === 'sections');
         setNavItems(navBlock?.items || []);
         setSections(secBlock?.items || []);
-        setSectionContent({
-          ...EMPTY_SECTION_CONTENT,
-          ...(data.section_content || {}),
-        });
+        setSectionContent(mergeSectionContent(data.section_content || {}));
+        setSectionPreview(data.section_preview || {});
       } catch (err) {
         if (!cancelled) showToast?.(err.message || 'Could not load design', 'error');
       } finally {
@@ -137,39 +153,39 @@ export default function DesignStudio({ showToast }) {
 
   async function handleSave() {
     if (!activeKey || !design || loadingDesign) return;
-    if (!navItems.length) {
-      showToast?.('Navbar list not loaded yet — wait a moment and try again', 'error');
-      return;
-    }
     const enabled = navItems.filter((i) => i.enabled);
-    if (enabled.length === 0) {
-      showToast?.('Turn on at least one navbar category before saving', 'error');
-      return;
-    }
-    if (enabled.length > 9) {
-      showToast?.('Max 9 navbar items — turn some off before saving', 'error');
-      return;
+    if (navItems.length) {
+      if (enabled.length === 0) {
+        showToast?.('Turn on at least one navbar category before saving', 'error');
+        return;
+      }
+      if (enabled.length > 9) {
+        showToast?.('Max 9 navbar items — turn some off before saving', 'error');
+        return;
+      }
     }
     setSaving(true);
     try {
       const nav_category_ids = enabled.map((i) => i.id);
       const data = await saveDesignPage(activeKey, {
-        nav_category_ids,
+        ...(nav_category_ids.length ? { nav_category_ids } : {}),
         sections,
-        section_content: sectionContent,
+        section_content: mergeSectionContent(sectionContent),
       });
       setDesign(data);
       const navBlock = (data.blocks || []).find((b) => b.type === 'nav_categories');
       const secBlock = (data.blocks || []).find((b) => b.type === 'sections');
       setNavItems(navBlock?.items || []);
       setSections(secBlock?.items || []);
-      setSectionContent({
-        ...EMPTY_SECTION_CONTENT,
-        ...(data.section_content || {}),
-      });
+      setSectionContent(mergeSectionContent(data.section_content || {}));
+      setSectionPreview(data.section_preview || {});
       showToast?.(
-        `Design saved — header ${nav_category_ids.length} categor${
-          nav_category_ids.length === 1 ? 'y' : 'ies'
+        `Design saved${
+          nav_category_ids.length
+            ? ` — header ${nav_category_ids.length} categor${
+                nav_category_ids.length === 1 ? 'y' : 'ies'
+              }`
+            : ''
         }. Hard-refresh homepage preview.`,
         'success'
       );
@@ -423,6 +439,7 @@ export default function DesignStudio({ showToast }) {
                               }
                               categories={categoryOptions}
                               productsById={productsById}
+                              livePreview={sectionPreview[item.id] || null}
                             />
                           </div>
                         ) : null}

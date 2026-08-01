@@ -41,9 +41,11 @@ $sp_sc = static function ( $id ) use ( $sp_content ) {
  */
 $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stories, $sp_pick, $sp_deal, $sp_families, $sp_hot, $sp_showcase, $sp_chips, $sp_sc ) {
 	$c = $sp_sc( $sp_section_id );
+	// Design-aware parts ship inside IM so section edits apply even when
+	// storyphone-pages on the server is outdated.
 	switch ( $sp_section_id ) {
 		case 'hero':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'hero',
 				array(
 					'nav'      => $sp_nav,
@@ -54,7 +56,7 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			);
 			break;
 		case 'story-rail':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'story-rail',
 				array(
 					'stories'  => $sp_stories,
@@ -64,7 +66,7 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			);
 			break;
 		case 'pick-deck':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'pick-deck',
 				array(
 					'product'  => $sp_pick,
@@ -75,7 +77,7 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			);
 			break;
 		case 'quick-reach':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'quick-reach',
 				array(
 					'categories' => $sp_families,
@@ -85,7 +87,7 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			);
 			break;
 		case 'heat-board':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'heat-board',
 				array(
 					'products' => $sp_hot,
@@ -95,7 +97,7 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			);
 			break;
 		case 'showcase':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'showcase',
 				array(
 					'products' => $sp_showcase,
@@ -105,10 +107,10 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			);
 			break;
 		case 'deal':
-			StoryPhone_Pages_Render::part( 'deal', array( 'product' => $sp_deal ) );
+			StoryPhone_IM_Storefront_Design::part( 'deal', array( 'product' => $sp_deal ) );
 			break;
 		case 'trust':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'trust',
 				array(
 					'title' => isset( $c['title'] ) ? $c['title'] : '',
@@ -120,7 +122,7 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 			StoryPhone_Pages_Render::part( 'editor-content' );
 			break;
 		case 'cta':
-			StoryPhone_Pages_Render::part(
+			StoryPhone_IM_Storefront_Design::part(
 				'cta',
 				array(
 					'title'        => isset( $c['title'] ) ? $c['title'] : '',

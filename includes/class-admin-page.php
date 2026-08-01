@@ -233,10 +233,13 @@ class StoryPhone_IM_Admin_Page {
 		}
 
 		if ( file_exists( $js_path ) ) {
+			// Needed for Design / product image "Library" picker (wp.media).
+			wp_enqueue_media();
+
 			wp_enqueue_script(
 				'storyphone-im-app',
 				STORYPHONE_IM_PLUGIN_URL . 'build/main.js',
-				array(),
+				array( 'jquery', 'media-editor', 'media-views' ),
 				(string) filemtime( $js_path ),
 				true
 			);
