@@ -4,6 +4,7 @@ import {
   IconAllItems,
   IconCategories,
   IconDisabled,
+  IconNewOrder,
   IconInStock,
   IconOutOfStock,
 } from './NavIcons.jsx';
@@ -128,6 +129,7 @@ const COLLECTIONS = [
   { id: 'instock', label: 'In Stock', Icon: IconInStock },
   { id: 'outofstock', label: 'Out of stock', Icon: IconOutOfStock },
   { id: 'disabled', label: 'Disabled', Icon: IconDisabled },
+  { id: 'neworder', label: 'New Order Inventory', Icon: IconNewOrder },
 ];
 
 export default function CategoryNav({
@@ -139,6 +141,7 @@ export default function CategoryNav({
   onWorkspaceChange,
   onSelectCategory,
   onSelectCollection,
+  neworderCount = 0,
 }) {
   const tree = useMemo(() => buildCategoryTree(categories), [categories]);
   const [expanded, setExpanded] = useState(() => new Set());
@@ -184,6 +187,7 @@ export default function CategoryNav({
     if (id === 'instock') return stats?.instock ?? 0;
     if (id === 'outofstock') return stats?.outofstock ?? 0;
     if (id === 'disabled') return stats?.disabled ?? 0;
+    if (id === 'neworder') return neworderCount ?? 0;
     return 0;
   }
 

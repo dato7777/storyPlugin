@@ -260,6 +260,9 @@ class StoryPhone_IM_Admin_Page {
 					'storefrontReady'    => $pages_ready,
 					'storefrontOverride' => true,
 					'navLimit'           => 9,
+					'neworderConfigured' => class_exists( 'StoryPhone_IM_NewOrder' )
+						? StoryPhone_IM_NewOrder::is_configured()
+						: false,
 				)
 			);
 		}

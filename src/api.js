@@ -254,6 +254,32 @@ export function saveDesignPage(key, payload) {
   });
 }
 
+export function fetchNewOrderStatus() {
+  return request('neworder/status');
+}
+
+export function fetchNewOrderCatalog() {
+  return request('neworder/catalog');
+}
+
+export function syncNewOrderStock() {
+  return request('neworder/sync', { method: 'POST', body: '{}' });
+}
+
+export function saveNewOrderSettings(payload) {
+  return request('neworder/settings', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export function exportNewOrderProducts(ids) {
+  return request('neworder/export', {
+    method: 'POST',
+    body: JSON.stringify({ ids: ids || [] }),
+  });
+}
+
 function absInt(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;

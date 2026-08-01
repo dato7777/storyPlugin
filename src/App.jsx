@@ -8,6 +8,7 @@ import {
   deleteCategory,
   fetchCategories,
   fetchProduct,
+  fetchNewOrderStatus,
   fetchProducts,
   fetchStats,
   trashProduct,
@@ -28,6 +29,7 @@ import BulkBar from './components/BulkBar.jsx';
 import CategoryNav from './components/CategoryNav.jsx';
 import CategoryTreeView from './components/CategoryTreeView.jsx';
 import DesignStudio from './components/DesignStudio.jsx';
+import NewOrderInventory from './components/NewOrderInventory.jsx';
 import ProductList from './components/ProductList.jsx';
 import SearchField from './components/SearchField.jsx';
 import ProductEditPanel from './components/ProductEditPanel.jsx';
@@ -57,6 +59,7 @@ const COLLECTION_TITLES = {
   instock: 'In Stock',
   outofstock: 'Out of stock',
   disabled: 'Disabled',
+  neworder: 'New Order Inventory',
 };
 
 export default function App() {
@@ -97,10 +100,13 @@ export default function App() {
     thumbnail_id: 0,
     thumbnail_url: '',
   });
+  const [neworderCount, setNeworderCount] = useState(0);
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type, id: Date.now() });
   }, []);
+
+  const isNewOrder = workspace === 'inventory' && collection === 'neworder';
 
   const categoryOptions = useMemo(() => flattenCategoriesForSelect(categories), [categories]);
 
@@ -122,9 +128,10 @@ export default function App() {
     [categories]
   );
 
-  const showCategoryTree = workspace === 'inventory' && collection === 'categories' && !category;
-  // Product list pages only (not the All Categories tree).
-  const showProductToolbar = workspace === 'inventory' && !showCategoryTree;
+  const showCategoryTree =
+    workspace === 'inventory' && collection === 'categories' && !category && !isNewOrder;
+  // Product list pages only (not the All Categories tree / New Order page).
+  const showProductToolbar = workspace === 'inventory' && !showCategoryTree && !isNewOrder;
 
   const headerTitle = activeCategory?.name || COLLECTION_TITLES[collection] || 'All items';
 
@@ -167,6 +174,15 @@ export default function App() {
   }, []);
 
   const loadProducts = useCallback(async () => {
+    if (collection === 'neworder') {
+      setProducts([]);
+      setPages(1);
+      setTotal(0);
+      setSelectedIds(new Set());
+      setLoading(false);
+      return;
+    }
+
     if (collection === 'categories' && !category) {
       setProducts([]);
       setPages(1);
@@ -205,6 +221,9 @@ export default function App() {
       showToast(err.message || 'Failed to load categories', 'error')
     );
     loadStats();
+    fetchNewOrderStatus()
+      .then((data) => setNeworderCount(data.product_count || 0))
+      .catch(() => {});
   }, [loadCategories, loadStats, showToast]);
 
   useEffect(() => {
@@ -632,13 +651,14 @@ export default function App() {
       <div className="sp-layout">
         <CategoryNav
           categories={categories}
-          selectedCategoryId={category}
+          selectedCategoryId={isNewOrder ? 0 : category}
           collection={collection}
           stats={stats}
           workspace={workspace}
           onWorkspaceChange={setWorkspace}
           onSelectCategory={selectCategory}
           onSelectCollection={selectCollection}
+          neworderCount={neworderCount}
         />
 
         <section className="sp-content">
@@ -646,6 +666,12 @@ export default function App() {
             <main className="sp-main">
               <DesignStudio showToast={showToast} />
             </main>
+          ) : isNewOrder ? (
+            <NewOrderInventory
+              showToast={showToast}
+              currencySymbol={settings.currencySymbol || '₪'}
+              onCountChange={setNeworderCount}
+            />
           ) : (
             <>
           <header className="sp-content-header">
@@ -781,7 +807,7 @@ export default function App() {
         </section>
       </div>
 
-      {workspace === 'inventory' && !showCategoryTree ? (
+      {workspace === 'inventory' && !showCategoryTree && !isNewOrder ? (
         <BulkBar
           count={selectedIds.size}
           saving={saving}

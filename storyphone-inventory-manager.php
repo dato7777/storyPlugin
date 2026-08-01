@@ -75,6 +75,7 @@ add_action( 'plugins_loaded', 'storyphone_im_check_woocommerce' );
 function storyphone_im_bootstrap() {
 	require_once STORYPHONE_IM_PLUGIN_DIR . 'includes/class-admin-page.php';
 	require_once STORYPHONE_IM_PLUGIN_DIR . 'includes/class-rest-controller.php';
+	require_once STORYPHONE_IM_PLUGIN_DIR . 'includes/class-neworder.php';
 	require_once STORYPHONE_IM_PLUGIN_DIR . 'includes/class-audit-log.php';
 	require_once STORYPHONE_IM_PLUGIN_DIR . 'includes/class-storefront-visibility.php';
 	require_once STORYPHONE_IM_PLUGIN_DIR . 'includes/class-design.php';
@@ -83,6 +84,7 @@ function storyphone_im_bootstrap() {
 	StoryPhone_IM_Audit_Log::maybe_install();
 	StoryPhone_IM_Admin_Page::init();
 	StoryPhone_IM_REST_Controller::init();
+	StoryPhone_IM_NewOrder::init();
 	StoryPhone_IM_Storefront_Visibility::init();
 	StoryPhone_IM_Storefront_Design::init();
 	add_action( 'rest_api_init', array( 'StoryPhone_IM_Design', 'register_routes' ) );
