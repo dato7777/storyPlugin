@@ -967,18 +967,16 @@ class StoryPhone_IM_REST_Controller {
 			$desc = wp_kses_post( $params['description'] );
 			$product->set_description( $desc );
 			$changed['description'] = 'updated';
-
-			// Many themes show the short description on the product page.
-			// Keep them in sync unless short_description is sent explicitly.
-			if ( ! array_key_exists( 'short_description', $params ) ) {
-				$product->set_short_description( $desc );
-				$changed['short_description'] = 'synced';
-			}
 		}
 
 		if ( array_key_exists( 'short_description', $params ) ) {
 			$product->set_short_description( wp_kses_post( $params['short_description'] ) );
 			$changed['short_description'] = 'updated';
+		}
+
+		if ( array_key_exists( 'youtube_url', $params ) ) {
+			self::apply_youtube_url( $product, $params['youtube_url'] );
+			$changed['youtube_url'] = 'updated';
 		}
 
 		if ( isset( $params['sku'] ) ) {
@@ -1195,16 +1193,16 @@ class StoryPhone_IM_REST_Controller {
 		}
 		$product->set_stock_status( $stock_status );
 
-		if ( ! empty( $params['description'] ) ) {
-			$desc = wp_kses_post( $params['description'] );
-			$product->set_description( $desc );
-			if ( ! array_key_exists( 'short_description', $params ) ) {
-				$product->set_short_description( $desc );
-			}
+		if ( array_key_exists( 'description', $params ) ) {
+			$product->set_description( wp_kses_post( $params['description'] ) );
 		}
 
 		if ( array_key_exists( 'short_description', $params ) ) {
 			$product->set_short_description( wp_kses_post( $params['short_description'] ) );
+		}
+
+		if ( array_key_exists( 'youtube_url', $params ) ) {
+			self::apply_youtube_url( $product, $params['youtube_url'] );
 		}
 
 		// Enabled = publish + visible; Disabled = draft + hidden.
@@ -2687,14 +2685,17 @@ class StoryPhone_IM_REST_Controller {
 
 		$description       = $product->get_description();
 		$short_description = $product->get_short_description();
+		$youtube_url       = (string) $product->get_meta( '_storyphone_youtube', true );
+		if ( '' === $youtube_url ) {
+			$youtube_url = (string) $product->get_meta( 'storyphone_youtube', true );
+		}
 
 		return array_merge(
 			$summary,
 			array(
 				'description'       => $description,
 				'short_description' => $short_description,
-				// Prefer full description; fall back so the editor is never blank if only short exists.
-				'edit_description'  => $description ? $description : $short_description,
+				'youtube_url'       => $youtube_url,
 				'manage_stock'      => $product->get_manage_stock(),
 				'image_id'          => $image_id,
 				'image'             => $image_url ? esc_url_raw( $image_url ) : $summary['image'],
@@ -2704,5 +2705,28 @@ class StoryPhone_IM_REST_Controller {
 				'type'              => $product->get_type(),
 			)
 		);
+	}
+
+	/**
+	 * Save YouTube URL/id for the storefront product video slot (_storyphone_youtube).
+	 *
+	 * @param WC_Product $product Product.
+	 * @param mixed      $value   URL or bare video id.
+	 * @return void
+	 */
+	private static function apply_youtube_url( $product, $value ) {
+		$raw = trim( (string) $value );
+		// Keep URL characters; strip tags / control chars only.
+		$raw = wp_strip_all_tags( $raw );
+		$raw = preg_replace( '/[\x00-\x1F\x7F]/', '', $raw );
+		$raw = is_string( $raw ) ? trim( $raw ) : '';
+
+		if ( '' === $raw ) {
+			$product->delete_meta_data( '_storyphone_youtube' );
+			$product->delete_meta_data( 'storyphone_youtube' );
+			return;
+		}
+
+		$product->update_meta_data( '_storyphone_youtube', $raw );
 	}
 }

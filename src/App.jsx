@@ -42,7 +42,9 @@ const emptyCreateForm = {
   name: '',
   price: '',
   sku: '',
+  short_description: '',
   description: '',
+  youtube_url: '',
   stock_qty: 0,
   unlimited: true,
   stock_status: 'instock',
@@ -85,6 +87,7 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
+  const [createTab, setCreateTab] = useState('basics');
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmTrash, setConfirmTrash] = useState(null);
@@ -413,7 +416,8 @@ export default function App() {
   async function handleCreate(e) {
     e.preventDefault();
     if (!createForm.name || !createForm.price || !createForm.sku) {
-      showToast('Name, price, and SKU are required', 'error');
+      setCreateTab('basics');
+      showToast('Name, price, and SKU are required — fill them in Basics', 'error');
       return;
     }
     setSaving(true);
@@ -422,8 +426,9 @@ export default function App() {
         name: createForm.name,
         price: createForm.price,
         sku: createForm.sku,
+        short_description: createForm.short_description || '',
         description: createForm.description || '',
-        short_description: createForm.description || '',
+        youtube_url: (createForm.youtube_url || '').trim(),
         category_ids: createForm.category_ids,
         stock_quantity: createForm.unlimited ? null : Number(createForm.stock_qty) || 0,
         stock_status: createForm.stock_status,
@@ -441,6 +446,7 @@ export default function App() {
       showToast('Product created');
       setCreateOpen(false);
       setCreateForm(emptyCreateForm);
+      setCreateTab('basics');
       setPage(1);
       await loadProducts();
       await loadStats();
@@ -737,7 +743,10 @@ export default function App() {
                 <button
                   type="button"
                   className="sp-btn sp-btn-primary sp-btn-create-cat"
-                  onClick={() => setCreateOpen(true)}
+                  onClick={() => {
+                    setCreateTab('basics');
+                    setCreateOpen(true);
+                  }}
                 >
                   <span className="sp-btn-create-cat-plus" aria-hidden="true">
                     +
@@ -845,72 +854,42 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               <h2 id="sp-create-title">Create item</h2>
+              <div className="sp-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  className={`sp-tab ${createTab === 'basics' ? 'is-active' : ''}`}
+                  aria-selected={createTab === 'basics'}
+                  onClick={() => setCreateTab('basics')}
+                >
+                  Basics
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`sp-tab ${createTab === 'media' ? 'is-active' : ''}`}
+                  aria-selected={createTab === 'media'}
+                  onClick={() => setCreateTab('media')}
+                >
+                  Images
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`sp-tab ${createTab === 'youtube' ? 'is-active' : ''}`}
+                  aria-selected={createTab === 'youtube'}
+                  onClick={() => setCreateTab('youtube')}
+                >
+                  YouTube
+                </button>
+              </div>
               <form className="sp-form sp-form-create" onSubmit={handleCreate}>
-                <div className="sp-card-block">
-                  <h3 className="sp-card-block-title">About</h3>
-                  <label>
-                    Item name
-                    <input
-                      required
-                      maxLength={300}
-                      value={createForm.name}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
-                    />
-                    <span className="sp-char-count">{createForm.name.length}/300</span>
-                  </label>
-                  <label>
-                    SKU
-                    <input
-                      required
-                      value={createForm.sku}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, sku: e.target.value }))}
-                    />
-                  </label>
-                  <label>
-                    Price ({settings.currencySymbol || '₪'})
-                    <input
-                      required
-                      inputMode="decimal"
-                      value={createForm.price}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, price: e.target.value }))}
-                    />
-                  </label>
-                  <label>
-                    Storefront
-                    <select
-                      value={createForm.enabled ? 'enabled' : 'disabled'}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          enabled: e.target.value === 'enabled',
-                        }))
-                      }
-                    >
-                      <option value="enabled">Enabled (shop + search)</option>
-                      <option value="disabled">Disabled (off website & search)</option>
-                    </select>
-                  </label>
-                  <label>
-                    Primary category
-                    <select
-                      value={createForm.category_ids[0] || ''}
-                      onChange={(e) =>
-                        setCreateForm((f) => ({
-                          ...f,
-                          category_ids: e.target.value ? [Number(e.target.value)] : [],
-                        }))
-                      }
-                    >
-                      <option value="">None</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div>
-                    <span className="sp-label">Image</span>
+                {createTab === 'media' ? (
+                  <div className="sp-card-block">
+                    <h3 className="sp-card-block-title">Images</h3>
+                    <p className="sp-help sp-image-pref">
+                      Preferred size: <strong>600×600 px</strong> (square). JPG, PNG, GIF, or WebP.
+                    </p>
                     <div className="sp-image-source-row">
                       <label className="sp-btn sp-btn-ghost sp-file-label">
                         Local
@@ -959,8 +938,8 @@ export default function App() {
                       </button>
                     </div>
                     <p className="sp-help">
-                      <strong>Local</strong> = from this computer. <strong>Library</strong> = WordPress
-                      Media Library (opens over this window). Image applies when you create the item.
+                      <strong>Local</strong> = from this computer. <strong>Library</strong> =
+                      WordPress Media Library. Image applies when you create the item.
                     </p>
                     {createForm.imageFile ? (
                       <div className="sp-image-preview" style={{ marginTop: 8 }}>
@@ -993,86 +972,193 @@ export default function App() {
                       </div>
                     ) : null}
                   </div>
-                </div>
-
-                <div className="sp-card-block">
-                  <h3 className="sp-card-block-title">Inventory</h3>
-                  <div className="sp-field-row">
-                    <div>
-                      <span className="sp-label">Quantity</span>
-                      <div className="sp-qty-mode">
-                        <button
-                          type="button"
-                          className={`sp-qty-mode-btn ${createForm.unlimited ? 'is-active' : ''}`}
-                          onClick={() => setCreateForm((f) => ({ ...f, unlimited: true }))}
-                        >
-                          ∞ Unlimited
-                        </button>
-                        <button
-                          type="button"
-                          className={`sp-qty-mode-btn ${!createForm.unlimited ? 'is-active' : ''}`}
-                          onClick={() =>
+                ) : createTab === 'youtube' ? (
+                  <div className="sp-card-block">
+                    <h3 className="sp-card-block-title">YouTube video</h3>
+                    <label className="sp-label">
+                      YouTube URL
+                      <input
+                        type="url"
+                        inputMode="url"
+                        placeholder="https://www.youtube.com/watch?v=…"
+                        value={createForm.youtube_url}
+                        disabled={saving}
+                        onChange={(e) =>
+                          setCreateForm((f) => ({ ...f, youtube_url: e.target.value }))
+                        }
+                      />
+                    </label>
+                    <p className="sp-help">
+                      Fills the product page video slot. Leave empty for the placeholder.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="sp-card-block">
+                      <h3 className="sp-card-block-title">About</h3>
+                      <label>
+                        Item name
+                        <input
+                          maxLength={300}
+                          value={createForm.name}
+                          onChange={(e) =>
+                            setCreateForm((f) => ({ ...f, name: e.target.value }))
+                          }
+                        />
+                        <span className="sp-char-count">{createForm.name.length}/300</span>
+                      </label>
+                      <label>
+                        SKU
+                        <input
+                          value={createForm.sku}
+                          onChange={(e) =>
+                            setCreateForm((f) => ({ ...f, sku: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Price ({settings.currencySymbol || '₪'})
+                        <input
+                          inputMode="decimal"
+                          value={createForm.price}
+                          onChange={(e) =>
+                            setCreateForm((f) => ({ ...f, price: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Storefront
+                        <select
+                          value={createForm.enabled ? 'enabled' : 'disabled'}
+                          onChange={(e) =>
                             setCreateForm((f) => ({
                               ...f,
-                              unlimited: false,
-                              stock_qty: f.stock_qty > 0 ? f.stock_qty : 1,
+                              enabled: e.target.value === 'enabled',
                             }))
                           }
                         >
-                          Limited
-                        </button>
-                      </div>
-                      {!createForm.unlimited ? (
-                        <div className="sp-qty-stepper-wrap">
-                          <QuantityStepper
-                            value={createForm.stock_qty}
-                            onChange={(qty) =>
-                              setCreateForm((f) => ({
-                                ...f,
-                                stock_qty: qty,
-                                stock_status: qty > 0 ? 'instock' : f.stock_status,
-                              }))
+                          <option value="enabled">Enabled (shop + search)</option>
+                          <option value="disabled">Disabled (off website & search)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Primary category
+                        <select
+                          value={createForm.category_ids[0] || ''}
+                          onChange={(e) =>
+                            setCreateForm((f) => ({
+                              ...f,
+                              category_ids: e.target.value ? [Number(e.target.value)] : [],
+                            }))
+                          }
+                        >
+                          <option value="">None</option>
+                          {categoryOptions.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="sp-card-block">
+                      <h3 className="sp-card-block-title">Inventory</h3>
+                      <div className="sp-field-row">
+                        <div>
+                          <span className="sp-label">Quantity</span>
+                          <div className="sp-qty-mode">
+                            <button
+                              type="button"
+                              className={`sp-qty-mode-btn ${createForm.unlimited ? 'is-active' : ''}`}
+                              onClick={() => setCreateForm((f) => ({ ...f, unlimited: true }))}
+                            >
+                              ∞ Unlimited
+                            </button>
+                            <button
+                              type="button"
+                              className={`sp-qty-mode-btn ${!createForm.unlimited ? 'is-active' : ''}`}
+                              onClick={() =>
+                                setCreateForm((f) => ({
+                                  ...f,
+                                  unlimited: false,
+                                  stock_qty: f.stock_qty > 0 ? f.stock_qty : 1,
+                                }))
+                              }
+                            >
+                              Limited
+                            </button>
+                          </div>
+                          {!createForm.unlimited ? (
+                            <div className="sp-qty-stepper-wrap">
+                              <QuantityStepper
+                                value={createForm.stock_qty}
+                                onChange={(qty) =>
+                                  setCreateForm((f) => ({
+                                    ...f,
+                                    stock_qty: qty,
+                                    stock_status: qty > 0 ? 'instock' : f.stock_status,
+                                  }))
+                                }
+                              />
+                            </div>
+                          ) : (
+                            <p className="sp-help sp-qty-help">
+                              Default: unlimited stock. Switch to Limited to set an exact quantity.
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <span className="sp-label">Availability</span>
+                          <StockToggle
+                            status={createForm.stock_status}
+                            onChange={(status) =>
+                              setCreateForm((f) => ({ ...f, stock_status: status }))
                             }
                           />
                         </div>
-                      ) : (
-                        <p className="sp-help sp-qty-help">
-                          Default: unlimited stock. Switch to Limited to set an exact quantity.
-                        </p>
-                      )}
+                      </div>
                     </div>
-                    <div>
-                      <span className="sp-label">Availability</span>
-                      <StockToggle
-                        status={createForm.stock_status}
-                        onChange={(status) =>
-                          setCreateForm((f) => ({ ...f, stock_status: status }))
+
+                    <div className="sp-card-block">
+                      <h3 className="sp-card-block-title">Short description</h3>
+                      <p className="sp-help" style={{ marginTop: 0 }}>
+                        Buy box on the product page.
+                      </p>
+                      <RichTextEditor
+                        value={createForm.short_description}
+                        disabled={saving}
+                        onChange={(html) =>
+                          setCreateForm((f) => ({ ...f, short_description: html }))
                         }
+                        placeholder="Short summary next to the price / Add to cart"
                       />
                     </div>
-                  </div>
-                </div>
 
-                <div className="sp-card-block">
-                  <h3 className="sp-card-block-title">Description</h3>
-                  <RichTextEditor
-                    value={createForm.description}
-                    disabled={saving}
-                    onChange={(html) => setCreateForm((f) => ({ ...f, description: html }))}
-                    placeholder="Product description shown on the website"
-                  />
-                  <p className="sp-help">
-                    Same editor as edit — format text, preview, and insert images. Saved with the
-                    new item.
-                  </p>
-                </div>
+                    <div className="sp-card-block">
+                      <h3 className="sp-card-block-title">Full description</h3>
+                      <p className="sp-help" style={{ marginTop: 0 }}>
+                        Lower “תיאור המוצר” section on the product page.
+                      </p>
+                      <RichTextEditor
+                        value={createForm.description}
+                        disabled={saving}
+                        onChange={(html) => setCreateForm((f) => ({ ...f, description: html }))}
+                        placeholder="Full product story shown under the buy box"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="sp-modal-actions">
                   <button
                     type="button"
                     className="sp-btn sp-btn-ghost"
                     disabled={saving}
-                    onClick={() => setCreateOpen(false)}
+                    onClick={() => {
+                      setCreateOpen(false);
+                      setCreateTab('basics');
+                    }}
                   >
                     Close
                   </button>

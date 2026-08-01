@@ -10,7 +10,9 @@ const blank = {
   name: '',
   price: '',
   sku: '',
+  short_description: '',
   description: '',
+  youtube_url: '',
   stock_qty: 0,
   unlimited: true,
   stock_status: 'instock',
@@ -56,12 +58,13 @@ export default function ProductEditPanel({
       product.catalog_visibility === 'hidden' ||
       (product.status && product.status !== 'publish');
     const unlimited = product.manage_stock !== true;
-    const rawDesc = product.edit_description || product.description || product.short_description || '';
     setForm({
       name: product.name || '',
       price: product.price || '',
       sku: product.sku || '',
-      description: rawDesc,
+      short_description: product.short_description || '',
+      description: product.description || '',
+      youtube_url: product.youtube_url || '',
       stock_qty: unlimited ? 0 : product.stock_qty ?? 0,
       unlimited,
       stock_status: product.stock_status || 'instock',
@@ -92,13 +95,19 @@ export default function ProductEditPanel({
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (!String(form.name || '').trim() || !String(form.price || '').trim()) {
+      setTab('basics');
+      window.alert('Name and price are required. Fill them in Basics, then Save.');
+      return;
+    }
     await onSave(
       {
         name: form.name,
         price: form.price,
         sku: form.sku,
+        short_description: form.short_description,
         description: form.description,
-        short_description: form.description,
+        youtube_url: form.youtube_url.trim(),
         stock_quantity: form.unlimited ? null : Number(form.stock_qty) || 0,
         stock_status: form.stock_status,
         enabled: form.enabled,
@@ -188,6 +197,15 @@ export default function ProductEditPanel({
             onClick={() => setTab('media')}
           >
             Images
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={`sp-tab ${tab === 'youtube' ? 'is-active' : ''}`}
+            aria-selected={tab === 'youtube'}
+            onClick={() => setTab('youtube')}
+          >
+            YouTube
           </button>
         </div>
 
@@ -323,6 +341,25 @@ export default function ProductEditPanel({
                   <strong>Save</strong>.
                 </p>
               </div>
+            ) : tab === 'youtube' ? (
+              <div className="sp-card-block">
+                <h3 className="sp-card-block-title">YouTube video</h3>
+                <label>
+                  YouTube URL
+                  <input
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://www.youtube.com/watch?v=…"
+                    value={form.youtube_url}
+                    disabled={saving}
+                    onChange={(e) => setForm((f) => ({ ...f, youtube_url: e.target.value }))}
+                  />
+                </label>
+                <p className="sp-help">
+                  Shown in the product page video slot. Paste a full YouTube link or video id. Leave
+                  empty to keep the placeholder on the storefront.
+                </p>
+              </div>
             ) : (
               <>
                 <div className="sp-card-block">
@@ -330,7 +367,6 @@ export default function ProductEditPanel({
                   <label>
                     Item name
                     <input
-                      required
                       maxLength={300}
                       value={form.name}
                       onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -355,7 +391,6 @@ export default function ProductEditPanel({
                   <label>
                     Price ({currencySymbol})
                     <input
-                      required
                       inputMode="decimal"
                       value={form.price}
                       onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
@@ -456,17 +491,33 @@ export default function ProductEditPanel({
                 </div>
 
                 <div className="sp-card-block">
-                  <h3 className="sp-card-block-title">Description</h3>
+                  <h3 className="sp-card-block-title">Short description</h3>
+                  <p className="sp-help" style={{ marginTop: 0 }}>
+                    Buy box on the product page (<code>get_short_description()</code>).
+                  </p>
+                  <RichTextEditor
+                    value={form.short_description}
+                    disabled={saving}
+                    onChange={(html) => setForm((f) => ({ ...f, short_description: html }))}
+                    placeholder="Short summary next to the price / Add to cart"
+                  />
+                </div>
+
+                <div className="sp-card-block">
+                  <h3 className="sp-card-block-title">Full description</h3>
+                  <p className="sp-help" style={{ marginTop: 0 }}>
+                    Lower “תיאור המוצר” section on the product page (
+                    <code>get_description()</code>).
+                  </p>
                   <RichTextEditor
                     value={form.description}
                     disabled={saving}
                     onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                    placeholder="Product description shown on the website"
+                    placeholder="Full product story shown under the buy box"
                   />
                   <p className="sp-help">
-                    Format text with the toolbar, then use Preview to see how it will look. Press
-                    Enter for new lines — you do not need &amp;nbsp;. Saved to the storefront
-                    description fields on Save.
+                    Format with the toolbar, then Preview. Existing text loads here when you open
+                    the item.
                   </p>
                 </div>
               </>
