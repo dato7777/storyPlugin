@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchField from './SearchField.jsx';
+import CinemaBannerEditor from './CinemaBannerEditor.jsx';
 import { nameMatchesAllWords } from '../utils/searchMatch.js';
 
 function LiveMeta({ preview, isCustom }) {
@@ -197,9 +198,13 @@ function ItemReel({
           ))}
         </ul>
       )}
-      <button type="button" className="sp-btn sp-btn-soft sp-btn-sm" onClick={onAdd}>
-        + {addLabel}
-      </button>
+      {typeof onAdd === 'function' ? (
+        <button type="button" className="sp-btn sp-btn-soft sp-btn-sm" onClick={onAdd}>
+          + {addLabel}
+        </button>
+      ) : (
+        <p className="sp-design-muted">{addLabel}</p>
+      )}
     </div>
   );
 }
@@ -357,7 +362,15 @@ function selectableProductOptions(productsById) {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
-function ProductListSectionEditor({ content, onChange, productsById, livePreview, addLabel }) {
+function ProductListSectionEditor({
+  content,
+  onChange,
+  productsById,
+  livePreview,
+  addLabel,
+  hideTitles = false,
+  maxProducts = 0,
+}) {
   const patch = (partial) => onChange({ ...content, ...partial });
   const customIds = content.product_ids || [];
   const isCustom = Boolean(content.custom) || customIds.length > 0;
@@ -368,13 +381,19 @@ function ProductListSectionEditor({ content, onChange, productsById, livePreview
   );
   const [picker, setPicker] = useState(null);
 
-  const commitIds = (nextIds, custom = true) => patch({ custom, product_ids: nextIds });
+  const clampIds = (ids) => {
+    const clean = ids.map(Number).filter(Boolean);
+    return maxProducts > 0 ? clean.slice(0, maxProducts) : clean;
+  };
+
+  const commitIds = (nextIds, custom = true) => patch({ custom, product_ids: clampIds(nextIds) });
   const ensureEditableIds = () => {
     if (isCustom) return [...customIds].map(Number).filter(Boolean);
     return items.map((i) => i.id).filter(Boolean);
   };
 
   const isAdd = picker?.mode === 'add';
+  const atMax = maxProducts > 0 && items.length >= maxProducts;
 
   return (
     <div className="sp-design-section-editor">
@@ -405,13 +424,13 @@ function ProductListSectionEditor({ content, onChange, productsById, livePreview
       <div className="sp-design-live">
         <LiveMeta preview={livePreview} isCustom={isCustom} />
         {livePreview?.note ? <p className="sp-design-muted">{livePreview.note}</p> : null}
-        <TitleFields content={content} onPatch={patch} />
+        {!hideTitles ? <TitleFields content={content} onPatch={patch} /> : null}
         <ItemReel
           items={items}
           typeLabel="product"
-          addLabel={addLabel}
+          addLabel={atMax ? `Max ${maxProducts} products` : addLabel}
           emptyLabel="No products on this section yet"
-          onAdd={() => setPicker({ mode: 'add' })}
+          onAdd={atMax ? undefined : () => setPicker({ mode: 'add' })}
           onReplace={(id) => setPicker({ mode: 'replace', replaceId: id })}
           onRemove={(id) => {
             commitIds(
@@ -596,6 +615,17 @@ export default function SectionContentEditor({
         productsById={productsById}
         livePreview={livePreview}
         addLabel="Add product"
+      />
+    );
+  }
+
+  if (sectionId === 'cinema-banner') {
+    return (
+      <CinemaBannerEditor
+        content={content}
+        onChange={onChange}
+        productsById={productsById}
+        livePreview={livePreview}
       />
     );
   }

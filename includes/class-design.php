@@ -188,6 +188,10 @@ class StoryPhone_IM_Design {
 				'title'       => '',
 				'subtitle'    => '',
 			),
+			'cinema-banner'  => array(
+				'custom' => false,
+				'items'  => array(),
+			),
 			'showcase'       => array(
 				'custom'      => false,
 				'product_ids' => array(),
@@ -291,6 +295,8 @@ class StoryPhone_IM_Design {
 					'title'       => isset( $row['title'] ) ? sanitize_text_field( $row['title'] ) : '',
 					'subtitle'    => isset( $row['subtitle'] ) ? sanitize_text_field( $row['subtitle'] ) : '',
 				);
+			case 'cinema-banner':
+				return self::sanitize_cinema_banner_content( $row, $custom_flag() );
 			case 'deal':
 				$pid = isset( $row['product_id'] ) ? absint( $row['product_id'] ) : 0;
 				return array(
@@ -338,6 +344,78 @@ class StoryPhone_IM_Design {
 					'note' => '',
 				);
 		}
+	}
+
+	/**
+	 * Cinema orbit items: image / video attachments or products, optional caption.
+	 * Migrates legacy product_ids lists into product items.
+	 *
+	 * @param array $row         Raw content bag.
+	 * @param bool  $custom_flag Explicit custom flag from request.
+	 * @return array<string, mixed>
+	 */
+	private static function sanitize_cinema_banner_content( $row, $custom_flag ) {
+		$row   = is_array( $row ) ? $row : array();
+		$items = array();
+
+		if ( ! empty( $row['items'] ) && is_array( $row['items'] ) ) {
+			foreach ( array_slice( $row['items'], 0, 8 ) as $index => $item ) {
+				if ( ! is_array( $item ) ) {
+					continue;
+				}
+				$type = isset( $item['type'] ) ? sanitize_key( $item['type'] ) : '';
+				if ( ! in_array( $type, array( 'image', 'video', 'product' ), true ) ) {
+					continue;
+				}
+				$attachment_id = isset( $item['attachment_id'] ) ? absint( $item['attachment_id'] ) : 0;
+				$product_id    = isset( $item['product_id'] ) ? absint( $item['product_id'] ) : 0;
+				$url           = isset( $item['url'] ) ? esc_url_raw( $item['url'] ) : '';
+				$label         = isset( $item['label'] ) ? sanitize_text_field( $item['label'] ) : '';
+				$text          = isset( $item['text'] ) ? sanitize_text_field( $item['text'] ) : '';
+				$key           = isset( $item['key'] ) ? sanitize_key( $item['key'] ) : '';
+
+				if ( 'product' === $type && $product_id < 1 ) {
+					continue;
+				}
+				if ( ( 'image' === $type || 'video' === $type ) && $attachment_id < 1 && '' === $url ) {
+					continue;
+				}
+
+				if ( '' === $key ) {
+					$key = 'c' . (string) ( $index + 1 ) . 'x' . (string) ( $attachment_id + $product_id );
+				}
+
+				$items[] = array(
+					'key'           => $key,
+					'type'          => $type,
+					'attachment_id' => $attachment_id,
+					'product_id'    => $product_id,
+					'url'           => $url,
+					'label'         => $label,
+					'text'          => $text,
+				);
+			}
+		}
+
+		// Legacy: product_ids-only cinema picks → product items.
+		if ( empty( $items ) && ! empty( $row['product_ids'] ) && is_array( $row['product_ids'] ) ) {
+			foreach ( array_slice( array_values( array_filter( array_map( 'absint', $row['product_ids'] ) ) ), 0, 8 ) as $i => $pid ) {
+				$items[] = array(
+					'key'           => 'legacy' . (string) $pid,
+					'type'          => 'product',
+					'attachment_id' => 0,
+					'product_id'    => $pid,
+					'url'           => '',
+					'label'         => '',
+					'text'          => '',
+				);
+			}
+		}
+
+		return array(
+			'custom' => $custom_flag || ! empty( $items ),
+			'items'  => $items,
+		);
 	}
 
 	/**
@@ -652,6 +730,10 @@ class StoryPhone_IM_Design {
 				'note'     => __( 'Showcase grid', 'storyphone-inventory-manager' ),
 			);
 
+			$preview['cinema-banner'] = self::build_cinema_banner_preview(
+				isset( $content['cinema-banner'] ) && is_array( $content['cinema-banner'] ) ? $content['cinema-banner'] : array()
+			);
+
 			$deal_items = self::products_to_preview_items(
 				! empty( $data['deal'] ) ? array( $data['deal'] ) : array()
 			);
@@ -732,6 +814,101 @@ class StoryPhone_IM_Design {
 		}
 
 		return $preview;
+	}
+
+	/**
+	 * Preview payload for cinema orbit (custom items or automatic product search).
+	 *
+	 * @param array $bag Cinema content bag.
+	 * @return array<string, mixed>
+	 */
+	private static function build_cinema_banner_preview( $bag ) {
+		$bag   = is_array( $bag ) ? $bag : array();
+		$items = array();
+
+		if ( ! empty( $bag['items'] ) && is_array( $bag['items'] ) ) {
+			foreach ( $bag['items'] as $row ) {
+				if ( ! is_array( $row ) ) {
+					continue;
+				}
+				$type  = isset( $row['type'] ) ? (string) $row['type'] : '';
+				$text  = isset( $row['text'] ) ? trim( (string) $row['text'] ) : '';
+				$label = isset( $row['label'] ) ? (string) $row['label'] : '';
+				$url   = isset( $row['url'] ) ? (string) $row['url'] : '';
+				$name  = $label;
+				$image = $url;
+
+				if ( 'product' === $type && ! empty( $row['product_id'] ) && function_exists( 'wc_get_product' ) ) {
+					$product = wc_get_product( absint( $row['product_id'] ) );
+					if ( $product instanceof WC_Product ) {
+						$name = $product->get_name();
+						if ( class_exists( 'StoryPhone_Pages_Catalog' ) ) {
+							$image = StoryPhone_Pages_Catalog::get_product_image_url( $product, 'woocommerce_thumbnail' );
+						}
+					}
+				} elseif ( ( 'image' === $type || 'video' === $type ) && ! empty( $row['attachment_id'] ) ) {
+					$att_id = absint( $row['attachment_id'] );
+					if ( ! $name ) {
+						$name = (string) get_the_title( $att_id );
+					}
+					if ( 'image' === $type ) {
+						$resolved = wp_get_attachment_image_url( $att_id, 'medium' );
+						if ( $resolved ) {
+							$image = $resolved;
+						}
+					}
+				}
+
+				if ( ! $name ) {
+					$name = 'video' === $type ? __( 'Video', 'storyphone-inventory-manager' ) : __( 'Image', 'storyphone-inventory-manager' );
+				}
+
+				$items[] = array(
+					'id'    => isset( $row['product_id'] ) ? (int) $row['product_id'] : (int) ( $row['attachment_id'] ?? 0 ),
+					'name'  => $name,
+					'type'  => $type ? $type : 'image',
+					'image' => $image,
+					'url'   => $url,
+					'text'  => $text,
+				);
+			}
+		}
+
+		if ( empty( $items ) && class_exists( 'StoryPhone_Pages_Catalog' ) ) {
+			$cinema_searches = array(
+				array( 'iPhone 17', 'iPhone 16 Pro', 'iPhone' ),
+				array( 'Galaxy S25', 'Galaxy S24', 'Samsung Galaxy' ),
+				array( 'MacBook Pro', 'MacBook Air', 'MacBook' ),
+				array( 'Sony', 'Canon', 'Camera', 'מצלמה' ),
+				array( 'PlayStation', 'Xbox', 'Controller', 'גיימינג' ),
+				array( 'Apple Watch', 'Watch', 'שעון' ),
+				array( 'AirPods', 'Galaxy Buds', 'Earbuds' ),
+				array( 'iPhone 16', 'iPhone 15', 'iPhone' ),
+			);
+			foreach ( $cinema_searches as $terms ) {
+				$found = StoryPhone_Pages_Catalog::find_product_by_search( $terms );
+				if ( $found ) {
+					$items[] = array(
+						'id'    => (int) $found->get_id(),
+						'name'  => $found->get_name(),
+						'type'  => 'product',
+						'image' => StoryPhone_Pages_Catalog::get_product_image_url( $found, 'woocommerce_thumbnail' ),
+						'url'   => '',
+						'text'  => '',
+					);
+				}
+			}
+		}
+
+		$is_custom = ! empty( $bag['custom'] ) || ( ! empty( $bag['items'] ) && is_array( $bag['items'] ) );
+
+		return array(
+			'source'   => $is_custom ? 'custom' : 'auto',
+			'title'    => '',
+			'subtitle' => '',
+			'items'    => $items,
+			'note'     => __( 'Cinema orbit: images, videos, or products (max 8)', 'storyphone-inventory-manager' ),
+		);
 	}
 
 	/**

@@ -18,6 +18,7 @@ const EMPTY_SECTION_CONTENT = {
   'pick-deck': { custom: false, product_id: 0, title: '', subtitle: '' },
   'quick-reach': { custom: false, category_ids: [], title: '', subtitle: '' },
   'heat-board': { custom: false, product_ids: [], title: '', subtitle: '' },
+  'cinema-banner': { custom: false, items: [] },
   showcase: { custom: false, product_ids: [], title: '', subtitle: '' },
   deal: { custom: false, product_id: 0 },
   trust: { custom: false, title: '', items: [] },
@@ -46,6 +47,7 @@ export default function DesignStudio({ showToast }) {
   const [sectionContent, setSectionContent] = useState(EMPTY_SECTION_CONTENT);
   const [sectionPreview, setSectionPreview] = useState({});
   const [expandedSection, setExpandedSection] = useState(null);
+  const [cinemaOpen, setCinemaOpen] = useState(true);
   const [categories, setCategories] = useState([]);
   const [productsById, setProductsById] = useState({});
   const [loadingDesign, setLoadingDesign] = useState(false);
@@ -280,7 +282,7 @@ export default function DesignStudio({ showToast }) {
                 <div>
                   <h3 className="sp-design-editor-title">{design?.title || activePage.title}</h3>
                   <p className="sp-design-muted">
-                    Navbar first, then each section’s content down the page.
+                    Navbar, cinema orbit products, then each section’s content down the page.
                   </p>
                 </div>
                 <button
@@ -357,6 +359,44 @@ export default function DesignStudio({ showToast }) {
               <div className="sp-design-block">
                 <div className="sp-design-block-head">
                   <span className="sp-design-block-step">2</span>
+                  <div>
+                    <h4>Cinema banner orbit</h4>
+                    <p>
+                      Up to 8 orbit slots: upload images or videos, or pick products. Optional
+                      caption under each — leave blank for no text. Reset restores automatic
+                      catalog picks.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-ghost sp-btn-sm"
+                    onClick={() => setCinemaOpen((v) => !v)}
+                  >
+                    {cinemaOpen ? '▾' : '▸'}
+                  </button>
+                </div>
+                {cinemaOpen ? (
+                  <div className="sp-design-section-body">
+                    <SectionContentEditor
+                      sectionId="cinema-banner"
+                      content={sectionContent['cinema-banner'] || EMPTY_SECTION_CONTENT['cinema-banner']}
+                      onChange={(next) =>
+                        setSectionContent((prev) => ({
+                          ...prev,
+                          'cinema-banner': next,
+                        }))
+                      }
+                      categories={categoryOptions}
+                      productsById={productsById}
+                      livePreview={sectionPreview['cinema-banner'] || null}
+                    />
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="sp-design-block">
+                <div className="sp-design-block-head">
+                  <span className="sp-design-block-step">3</span>
                   <div>
                     <h4>Page sections</h4>
                     <p>

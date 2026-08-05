@@ -3773,3 +3773,84 @@ input.sp-search {
   font-weight: 650;
   cursor: pointer;
 }
+
+/* ---------- Cinema banner Design editor ---------- */
+
+.sp-cinema-editor-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sp-cinema-editor-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--sp-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sp-cinema-editor-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(168, 255, 42, 0.08);
+  display: grid;
+  place-items: center;
+}
+
+.sp-cinema-editor-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sp-cinema-editor-type {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sp-text-soft, #9bb0a4);
+}
+
+.sp-cinema-editor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sp-cinema-editor-meta strong {
+  font-size: 0.92rem;
+}
+
+.sp-cinema-editor-caption {
+  font-size: 0.82rem;
+  color: var(--sp-text-soft, #9bb0a4);
+}
+
+.sp-cinema-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.sp-cinema-editor-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sp-cinema-editor .sp-design-picker {
+  margin-top: 12px;
+}

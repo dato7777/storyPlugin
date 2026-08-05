@@ -1,14 +1,19 @@
 /**
  * Open the WordPress media modal above Inventory Manager panels/modals.
  *
+ * Important: wp.media fires `close` after a successful `select`. Resolving
+ * empty on `close` synchronously races and drops the selection — defer the
+ * cancel path so `select` always wins when the user confirmed.
+ *
  * @param {{
  *   multiple?: boolean,
  *   title?: string,
  *   buttonText?: string,
+ *   libraryType?: string|string[],
  *   onOpen?: () => void,
  *   onClose?: () => void,
  * }} options
- * @returns {Promise<Array<{ id: number, url: string, title: string }>>}
+ * @returns {Promise<Array<{ id: number, url: string, title: string, mime: string, type: string }>>}
  */
 export function openMediaLibrary(options = {}) {
   return new Promise((resolve, reject) => {
@@ -22,11 +27,13 @@ export function openMediaLibrary(options = {}) {
       return;
     }
 
+    const libraryType = options.libraryType || 'image';
+
     const frame = wp.media({
       title: options.title || 'Select from Media Library',
       button: { text: options.buttonText || 'Use selected' },
       multiple: Boolean(options.multiple),
-      library: { type: 'image' },
+      library: { type: libraryType },
     });
 
     const bumpZ = () => {
@@ -39,6 +46,8 @@ export function openMediaLibrary(options = {}) {
     };
 
     let settled = false;
+    let selected = false;
+
     const finish = (items) => {
       if (settled) return;
       settled = true;
@@ -52,7 +61,6 @@ export function openMediaLibrary(options = {}) {
 
     frame.on('open', () => {
       bumpZ();
-      // WP sometimes paints modal after open; bump again next frames.
       requestAnimationFrame(bumpZ);
       setTimeout(bumpZ, 50);
       try {
@@ -63,21 +71,45 @@ export function openMediaLibrary(options = {}) {
     });
 
     frame.on('select', () => {
+      selected = true;
       const selection = frame.state().get('selection');
       if (!selection) {
         finish([]);
         return;
       }
-      const items = selection.toJSON().map((att) => ({
-        id: Number(att.id) || 0,
-        url: String(att.sizes?.medium?.url || att.url || ''),
-        title: String(att.title || att.filename || ''),
-      }));
+      const items = selection.toJSON().map((att) => {
+        const mime = String(att.mime || '');
+        const isVideo = mime.startsWith('video/') || att.type === 'video';
+        // Prefer full/original URL; size variants are sometimes missing for new uploads.
+        const url = String(
+          (isVideo
+            ? att.url
+            : att.sizes?.large?.url || att.sizes?.full?.url || att.sizes?.medium?.url || att.url) ||
+            ''
+        );
+        return {
+          id: Number(att.id) || 0,
+          url,
+          title: String(att.title || att.filename || ''),
+          mime,
+          type: isVideo ? 'video' : 'image',
+        };
+      });
+      // Keep rows with a valid attachment id even if URL mapping failed.
       finish(items.filter((i) => i.id > 0));
     });
 
-    frame.on('escape', () => finish([]));
-    frame.on('close', () => finish([]));
+    // Cancel / X: close fires for success too — wait a tick so select can win.
+    frame.on('escape', () => {
+      setTimeout(() => {
+        if (!selected) finish([]);
+      }, 0);
+    });
+    frame.on('close', () => {
+      setTimeout(() => {
+        if (!selected) finish([]);
+      }, 50);
+    });
 
     frame.open();
   });

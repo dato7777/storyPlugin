@@ -21,7 +21,6 @@ $sp_pick    = $sp_home['pick'];
 $sp_chips   = $sp_home['chips'];
 $sp_sections = $sp_home['sections'];
 $sp_content = $sp_home['section_content'];
-$sp_nav_meta = $sp_home['nav_meta'];
 
 /**
  * Content bag for a section id.
@@ -140,18 +139,18 @@ $sp_render_section = static function ( $sp_section_id ) use ( $sp_nav, $sp_stori
 <head>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="theme-color" content="#07091a">
+	<meta name="theme-color" content="#0a100c">
 	<link rel="profile" href="https://gmpg.org/xfn/11">
 	<?php wp_head(); ?>
 </head>
 <body <?php body_class( 'sp-page sp-page--home' ); ?>>
 <?php wp_body_open(); ?>
 
-<!-- sp-nav mode=<?php echo esc_html( $sp_nav_meta['mode'] ); ?> count=<?php echo esc_html( (string) (int) $sp_nav_meta['count'] ); ?> ids=<?php echo esc_html( implode( ',', $sp_nav_meta['ids'] ) ); ?> via=im-override -->
-
 <a class="sp-skip" href="#sp-main"><?php esc_html_e( 'דלג לתוכן הראשי', 'storyphone-pages' ); ?></a>
 
 <?php StoryPhone_Pages_Render::part( 'site-header', array( 'nav' => $sp_nav ) ); ?>
+
+<?php StoryPhone_Pages_Render::part( 'cinema-banner' ); ?>
 
 <main id="sp-main" class="sp-main">
 

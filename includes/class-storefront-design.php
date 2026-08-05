@@ -24,7 +24,22 @@ class StoryPhone_IM_Storefront_Design {
 	 */
 	public static function init() {
 		add_filter( 'template_include', array( __CLASS__, 'override_home_template' ), 1000 );
-		add_action( 'wp_footer', array( __CLASS__, 'admin_debug_badge' ), 5 );
+
+		// Older builds printed a floating Design-nav debug badge in wp_footer.
+		// Ensure it can never reappear even if another copy still registers it.
+		$callback = array( __CLASS__, 'admin_debug_badge' );
+		foreach ( array( 0, 1, 5, 10, 20, 99 ) as $priority ) {
+			remove_action( 'wp_footer', $callback, $priority );
+		}
+	}
+
+	/**
+	 * Legacy no-op (older plugin builds hooked this on wp_footer).
+	 *
+	 * @return void
+	 */
+	public static function admin_debug_badge() {
+		return;
 	}
 
 	/**
@@ -74,7 +89,7 @@ class StoryPhone_IM_Storefront_Design {
 				}
 				$tree[] = array(
 					'term'     => $term,
-					'children' => self::get_child_categories( $term, 6 ),
+					'children' => self::get_child_categories( $term, 9 ),
 				);
 			}
 			return $tree;
@@ -85,62 +100,6 @@ class StoryPhone_IM_Storefront_Design {
 		}
 
 		return array();
-	}
-
-	/**
-	 * Meta for the admin debug badge.
-	 *
-	 * @return array{mode:string,count:int,ids:int[],override:bool}
-	 */
-	public static function get_nav_debug_meta() {
-		$config = self::read_design_nav_fresh();
-		$custom = ! empty( $config['custom'] );
-		$ids    = $custom ? array_slice( $config['ids'], 0, 9 ) : array();
-		$tree   = self::get_nav_tree( 9 );
-		$count  = count( $tree );
-		$out_ids = array();
-		foreach ( $tree as $row ) {
-			if ( ! empty( $row['term'] ) && $row['term'] instanceof WP_Term ) {
-				$out_ids[] = (int) $row['term']->term_id;
-			}
-		}
-
-		return array(
-			'mode'     => $custom ? 'custom' : 'auto',
-			'count'    => $count,
-			'ids'      => $out_ids,
-			'override' => true,
-			'saved'    => $ids,
-		);
-	}
-
-	/**
-	 * Floating badge for shop managers so Design wiring is obvious on preview.
-	 *
-	 * @return void
-	 */
-	public static function admin_debug_badge() {
-		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			return;
-		}
-		if ( ! is_page() ) {
-			return;
-		}
-		if ( 'storyphone-home' !== (string) get_page_template_slug( get_queried_object_id() ) ) {
-			return;
-		}
-
-		$meta  = self::get_nav_debug_meta();
-		$label = sprintf(
-			'StoryPhone Design nav: %s · %d items (IM override)',
-			$meta['mode'],
-			(int) $meta['count']
-		);
-		echo '<div id="storyphone-im-nav-debug" style="position:fixed;z-index:999999;left:12px;bottom:12px;padding:10px 14px;border-radius:12px;background:#0f172a;color:#f8fafc;font:650 12px/1.35 system-ui,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.35);max-width:min(420px,calc(100vw - 24px));">';
-		echo esc_html( $label );
-		echo '<div style="opacity:.75;margin-top:4px;font-weight:500;">';
-		echo esc_html( 'ids: ' . ( $meta['ids'] ? implode( ',', $meta['ids'] ) : '—' ) );
-		echo '</div></div>';
 	}
 
 	/**
@@ -295,7 +254,6 @@ class StoryPhone_IM_Storefront_Design {
 			'chips'           => $chips,
 			'sections'        => $sections,
 			'section_content' => $content,
-			'nav_meta'        => self::get_nav_debug_meta(),
 		);
 	}
 
@@ -495,7 +453,7 @@ class StoryPhone_IM_Storefront_Design {
 	 * @param int     $limit  Max children.
 	 * @return WP_Term[]
 	 */
-	private static function get_child_categories( $parent, $limit = 6 ) {
+	private static function get_child_categories( $parent, $limit = 9 ) {
 		if ( class_exists( 'StoryPhone_Pages_Catalog' ) && method_exists( 'StoryPhone_Pages_Catalog', 'get_child_categories' ) ) {
 			return StoryPhone_Pages_Catalog::get_child_categories( $parent, $limit );
 		}
